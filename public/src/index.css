@@ -1,9 +1,0 @@
-@import "tailwindcss";
-
-@theme {
-  --color-cadmium-red: #A82F2F;
-  --color-cadmium-orange: #D17A22;
-  --color-cadmium-sage: #B4C292;
-  --color-cadmium-olive: #736F4E;
-  --color-cadmium-dark: #0A0A06;
-}
