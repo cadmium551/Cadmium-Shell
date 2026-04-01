@@ -18,6 +18,9 @@ async function startServer() {
     next();
   });
 
+  //inserted thingy idk
+  app.get('/health', (req, res) => res.send('OK'));
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
