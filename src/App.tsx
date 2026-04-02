@@ -426,11 +426,12 @@ export default function App() {
               ) : (
                 <iframe
                   src={`${SANDBOX_BASE}/${activeGame}/index.html`}
-                  className="w-full h-full border-none"
+                  className="w-full h-full border-none bg-black"
                   sandbox="allow-scripts allow-same-origin allow-pointer-lock"
                   // Performance and capability hints
-                  allow="autoplay; fullscreen; gamepad; microphone; camera; midi; encrypted-media; xr-spatial-tracking; clipboard-read; clipboard-write"
+                  allow="autoplay; fullscreen; gamepad; microphone; camera; midi; encrypted-media; xr-spatial-tracking; clipboard-read; clipboard-write; cross-origin-isolated"
                   // @ts-ignore
+                  credentialless="true"
                   loading="eager"
                   title="Game Sandbox"
                 />
