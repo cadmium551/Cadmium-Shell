@@ -143,14 +143,40 @@ self.onmessage = async (e) => {
         const { oldId, newId } = payload;
         try {
           const oldDir = await root.getDirectoryHandle(oldId);
-          // FileSystemHandle.move is supported in modern Chromium
-          if (typeof oldDir.move === 'function') {
-            await oldDir.move(newId);
-          } else {
-            // Fallback: This is a simplified "rename" by creating a new dir and moving children
-            // In a real production app, we'd recursively copy, but move() is standard in OPFS now.
-            throw new Error("Browser does not support directory renaming via move()");
+          
+          // Check if destination already exists to avoid overwriting
+          try {
+            await root.getDirectoryHandle(newId);
+            throw new Error(`Destination game '${newId}' already exists.`);
+          } catch (e) {
+            if (e.name !== 'NotFoundError') throw e;
           }
+
+          // Create the new directory
+          const newDir = await root.getDirectoryHandle(newId, { create: true });
+
+          // Recursive function to copy all files and subdirectories
+          async function copyDirectory(srcDir, destDir) {
+            for await (const [name, handle] of srcDir.entries()) {
+              if (handle.kind === 'file') {
+                const srcFile = await handle.getFile();
+                const destFileHandle = await destDir.getFileHandle(name, { create: true });
+                const writable = await destFileHandle.createWritable();
+                await writable.write(srcFile);
+                await writable.close();
+              } else if (handle.kind === 'directory') {
+                const newSubDir = await destDir.getDirectoryHandle(name, { create: true });
+                await copyDirectory(handle, newSubDir);
+              }
+            }
+          }
+
+          // Perform the deep copy
+          await copyDirectory(oldDir, newDir);
+          
+          // Delete the old directory after successful copy
+          await root.removeEntry(oldId, { recursive: true });
+
           self.postMessage({ type: "RENAME_SUCCESS", oldId, newId });
         } catch (e) {
           self.postMessage({ type: "ERROR", error: `Rename failed: ${e.message}`, gameId: oldId });
