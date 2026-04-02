@@ -104,11 +104,18 @@ self.onmessage = async (e) => {
           
           // Removal patterns
           const patterns = [
+            // 1. Remove Google Analytics / Tag Manager
             /<script\b[^>]*src=["']https?:\/\/(?:www\.)?googletagmanager\.com\/gtag\/js[^"']*["'][^>]*><\/script>/gi,
             /<script\b[^>]*src=["']https?:\/\/(?:www\.)?google-analytics\.com\/analytics\.js[^"']*["'][^>]*><\/script>/gi,
+            /<script\b[^>]*>[\s\S]*?gtag\(['"]config['"][\s\S]*?<\/script>/gi,
             /<script\b[^>]*>[\s\S]*?ga\(['"]create['"][\s\S]*?<\/script>/gi,
+            // 3. Remove sidebar ads and their containers
+            /<div\b[^>]*id=["']sidebarad[12]["'][^>]*>[\s\S]*?<\/div>/gi,
+            // 4. Remove common ad iframes
             /<iframe\b[^>]*src=["']https?:\/\/(?:[^"']+\.)?(?:doubleclick\.net|adnxs\.com|googleads\.g\.doubleclick\.net|amazon-adsystem\.com|taboola\.com|outbrain\.com|popads\.net|propellerads\.com)[^"']*["'][^>]*><\/iframe>/gi,
             /<script\b[^>]*src=["']https?:\/\/(?:[^"']+\.)?(?:adsbygoogle\.js|carbonads\.com|buysellads\.com)[^"']*["'][^>]*><\/script>/gi,
+            // 5. Remove obfuscated ad/tracking scripts (targets standard javascript-obfuscator array rotation)
+            /<script>\s*\(\s*function\s*\(\s*_0x[a-fA-F0-9]+,\s*_0x[a-fA-F0-9]+\s*\)[\s\S]*?_0x[a-fA-F0-9]+\['push'\]\([\s\S]*?<\/script>/gi,
             /window\.ga=window\.ga\|\|function\(\)\{\(ga\.q=ga\.q\|\|\[\]\)\.push\(arguments\)\};ga\.l=\+new Date;/g
           ];
 
