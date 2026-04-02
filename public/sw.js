@@ -6,6 +6,9 @@
 const CACHE_NAME = "cadmium-shell-v4";
 const SANDBOX_PATH = "/vfs/";
 
+// In-memory cache for directory handles to drastically speed up deep path resolution
+const dirHandleCache = new Map();
+
 self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
@@ -61,31 +64,41 @@ async function handleGameAssetRequest(url) {
 
     const gameId = decodeURIComponent(pathParts[0]);
     const filePath = decodeURIComponent(pathParts.slice(1).join("/") || "index.html");
+    const subPaths = filePath.split("/");
 
     const root = await navigator.storage.getDirectory();
-    // New structure: /{gameId}/www/{filePath}
-    let gameDir;
-    try {
-      gameDir = await root.getDirectoryHandle(gameId);
-    } catch (e) {
-      return new Response(`Game directory not found: ${gameId}`, { status: 404 });
-    }
+    
+    // Build a cache key for the directory path
+    const dirPathKey = `${gameId}/www/${subPaths.slice(0, -1).join('/')}`;
+    let current;
 
-    let wwwDir;
-    try {
-      wwwDir = await gameDir.getDirectoryHandle("www");
-    } catch (e) {
-      return new Response(`Assets directory (www) not found for game: ${gameId}`, { status: 404 });
-    }
-
-    let current = wwwDir;
-    const subPaths = filePath.split("/");
-    for (let i = 0; i < subPaths.length - 1; i++) {
+    if (dirHandleCache.has(dirPathKey)) {
+      current = dirHandleCache.get(dirPathKey);
+    } else {
+      let gameDir;
       try {
-        current = await current.getDirectoryHandle(subPaths[i]);
+        gameDir = await root.getDirectoryHandle(gameId);
       } catch (e) {
-        return new Response(`Directory not found: ${subPaths[i]} in path ${filePath}`, { status: 404 });
+        return new Response(`Game directory not found: ${gameId}`, { status: 404 });
       }
+
+      let wwwDir;
+      try {
+        wwwDir = await gameDir.getDirectoryHandle("www");
+      } catch (e) {
+        return new Response(`Assets directory (www) not found for game: ${gameId}`, { status: 404 });
+      }
+
+      current = wwwDir;
+      for (let i = 0; i < subPaths.length - 1; i++) {
+        try {
+          current = await current.getDirectoryHandle(subPaths[i]);
+        } catch (e) {
+          return new Response(`Directory not found: ${subPaths[i]} in path ${filePath}`, { status: 404 });
+        }
+      }
+      // Cache the resolved directory handle for future requests
+      dirHandleCache.set(dirPathKey, current);
     }
 
     let fileHandle;
@@ -120,15 +133,45 @@ async function handleGameAssetRequest(url) {
       contentType = mimeMap[ext] || 'application/octet-stream';
     }
 
+    const reqHeaders = event.request.headers;
+    const rangeHeader = reqHeaders.get('Range');
+
+    if (rangeHeader) {
+      const bytesMatch = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+      if (bytesMatch) {
+        const start = parseInt(bytesMatch[1], 10);
+        const end = bytesMatch[2] ? parseInt(bytesMatch[2], 10) : file.size - 1;
+        const chunkSize = end - start + 1;
+        const slicedFile = file.slice(start, end + 1, contentType);
+
+        return new Response(slicedFile, {
+          status: 206,
+          headers: {
+            "Content-Type": contentType,
+            "Content-Range": `bytes ${start}-${end}/${file.size}`,
+            "Content-Length": chunkSize.toString(),
+            "Accept-Ranges": "bytes",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "public, max-age=3600",
+            "Cross-Origin-Resource-Policy": "cross-origin",
+            "X-Content-Type-Options": "nosniff",
+            "Cross-Origin-Embedder-Policy": "credentialless",
+            "Cross-Origin-Opener-Policy": "same-origin"
+          }
+        });
+      }
+    }
+
     return new Response(file, {
       headers: {
         "Content-Type": contentType,
+        "Accept-Ranges": "bytes",
         "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "no-cache",
+        "Cache-Control": "public, max-age=3600",
         "Cross-Origin-Resource-Policy": "cross-origin",
         "X-Content-Type-Options": "nosniff",
         // These help with SharedArrayBuffer and other advanced APIs
-        "Cross-Origin-Embedder-Policy": "require-corp",
+        "Cross-Origin-Embedder-Policy": "credentialless",
         "Cross-Origin-Opener-Policy": "same-origin"
       },
     });
