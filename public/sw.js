@@ -105,7 +105,24 @@ async function handleGameAssetRequest(url) {
     try {
       fileHandle = await current.getFileHandle(subPaths[subPaths.length - 1]);
     } catch (e) {
-      return new Response(`File not found: ${subPaths[subPaths.length - 1]} in path ${filePath}`, { status: 404 });
+      if (dirHandleCache.has(dirPathKey)) {
+        // Cache might be stale (e.g. game was deleted and re-uploaded). Clear it and retry once.
+        dirHandleCache.delete(dirPathKey);
+        try {
+          const gameDir = await root.getDirectoryHandle(gameId);
+          const wwwDir = await gameDir.getDirectoryHandle("www");
+          current = wwwDir;
+          for (let i = 0; i < subPaths.length - 1; i++) {
+            current = await current.getDirectoryHandle(subPaths[i]);
+          }
+          dirHandleCache.set(dirPathKey, current);
+          fileHandle = await current.getFileHandle(subPaths[subPaths.length - 1]);
+        } catch (retryError) {
+          return new Response(`File not found after retry: ${subPaths[subPaths.length - 1]} in path ${filePath}`, { status: 404 });
+        }
+      } else {
+        return new Response(`File not found: ${subPaths[subPaths.length - 1]} in path ${filePath}`, { status: 404 });
+      }
     }
     const file = await fileHandle.getFile();
 
