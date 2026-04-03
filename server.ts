@@ -8,18 +8,15 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT || 3000;
+  const PORT = 3000;
 
   // Middleware to set COOP and COEP headers for SharedArrayBuffer support
   app.use((req, res, next) => {
     res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
-    res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+    res.setHeader("Cross-Origin-Embedder-Policy", "credentialless");
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     next();
   });
-
-  //inserted thingy idk
-  app.get('/health', (req, res) => res.send('OK'));
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
