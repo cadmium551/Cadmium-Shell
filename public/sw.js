@@ -3,7 +3,7 @@
  * Serves game assets directly from the Origin Private File System (OPFS).
  */
 
-const CACHE_NAME = "cadmium-shell-v5";
+const CACHE_NAME = "cadmium-shell-v6";
 const SANDBOX_PATH = "/vfs/";
 
 self.addEventListener("install", (event) => {
@@ -33,20 +33,28 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Network-first strategy for the shell itself
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        if (response.ok) {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-        }
-        return response;
-      })
-      .catch(() => {
-        return caches.match(event.request);
-      })
-  );
+  // Only intercept and cache GET requests to our own origin (App Shell)
+  if (url.origin === self.location.origin && event.request.method === 'GET') {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          // Don't cache partial responses or errors
+          if (response.ok && response.status === 200) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          }
+          return response;
+        })
+        .catch(() => {
+          return caches.match(event.request);
+        })
+    );
+    return;
+  }
+
+  // For all other requests (external APIs, CDNs, large game downloads),
+  // let the browser handle them natively without Service Worker interference.
+  return;
 });
 
 async function handleGameAssetRequest(url, request) {
