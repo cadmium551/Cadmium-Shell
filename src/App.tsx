@@ -31,28 +31,12 @@ export default function App() {
   const barTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      const threshold = window.innerHeight - 5;
-      if (e.clientY >= threshold) {
-        setShowOverlayBar(true);
-        if (barTimeoutRef.current) window.clearTimeout(barTimeoutRef.current);
-        barTimeoutRef.current = window.setTimeout(() => {
-          setShowOverlayBar(false);
-        }, 3000);
-      }
-    };
-
     if (activeGame) {
-      window.addEventListener('mousemove', handleMouseMove);
       setShowOverlayBar(true);
       if (barTimeoutRef.current) window.clearTimeout(barTimeoutRef.current);
       barTimeoutRef.current = window.setTimeout(() => setShowOverlayBar(false), 3000);
-    } else {
-      window.removeEventListener('mousemove', handleMouseMove);
     }
-
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
       if (barTimeoutRef.current) window.clearTimeout(barTimeoutRef.current);
     };
   }, [activeGame]);
@@ -93,7 +77,13 @@ export default function App() {
       
       if (type === 'LIST_SUCCESS') {
         console.log(`[Cadmium] Games list updated: ${fetchedGames.length} games found`);
-        setGames(fetchedGames.map((id: string) => ({ id, name: id })));
+        setGames(fetchedGames.map((id: string) => {
+          let displayName = id;
+          if (displayName.toLowerCase().endsWith('.html')) {
+            displayName = displayName.slice(0, -5);
+          }
+          return { id, name: displayName };
+        }));
       } else if (type === 'WRITE_SUCCESS' || type === 'DELETE_SUCCESS') {
         console.log(`[Cadmium] Operation success: ${type} for ${gameId}`);
         if (type === 'WRITE_SUCCESS') {
@@ -222,7 +212,7 @@ export default function App() {
       {/* Header */}
       <header className="border-b border-white/5 p-6 flex flex-col lg:flex-row items-center justify-between bg-cadmium-dark sticky top-0 z-10 gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-cadmium-red rounded-lg flex items-center justify-center shadow-lg shadow-cadmium-red/20">
+          <div className="w-10 h-10 bg-cadmium-red rounded-sm flex items-center justify-center shadow-lg shadow-cadmium-red/20">
             <Gamepad2 className="text-white" size={24} />
           </div>
           <div>
@@ -245,7 +235,7 @@ export default function App() {
           >
             <Settings size={20} />
           </button>
-          <label className="flex items-center gap-2 bg-cadmium-red hover:bg-cadmium-orange text-white px-8 py-3 rounded-full cursor-pointer transition-all active:scale-95 shadow-xl shadow-cadmium-red/40 group">
+          <label className="flex items-center gap-2 bg-cadmium-red hover:bg-cadmium-orange text-white px-8 py-3 rounded-full cursor-pointer transition-all active:scale-95 shadow-md shadow-cadmium-red/40 group">
             <Upload size={20} className="group-hover:-translate-y-1 transition-transform" />
             <span className="text-sm font-bold uppercase tracking-widest">Import HTML Game</span>
             <input 
@@ -262,7 +252,7 @@ export default function App() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto p-8">
         {isImporting && (
-          <div className="mb-8 p-4 bg-cadmium-red/10 border border-cadmium-red/20 rounded-xl flex items-center gap-4 animate-pulse">
+          <div className="mb-8 p-4 bg-cadmium-red/10 border border-cadmium-red/20 rounded-sm flex items-center gap-4 animate-pulse">
             <Layers className="text-cadmium-red animate-bounce" />
             <span className="text-cadmium-red font-mono text-sm uppercase tracking-widest">Writing to OPFS...</span>
           </div>
@@ -277,11 +267,11 @@ export default function App() {
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
-                className="group relative bg-[#050505] border border-white/5 rounded-3xl overflow-hidden hover:border-cadmium-red/50 transition-all duration-500 shadow-2xl"
+                className="group relative bg-[#111111] border border-white/5 rounded-sm overflow-hidden hover:border-cadmium-red/50 transition-all duration-200 shadow-md"
               >
                 <div className="p-8">
                   <div className="flex items-start justify-between mb-6">
-                    <div className="bg-white/5 p-4 rounded-2xl group-hover:bg-cadmium-red/20 transition-all duration-500 group-hover:rotate-6">
+                    <div className="bg-white/5 p-4 rounded-sm group-hover:bg-cadmium-red/20 transition-all duration-200 ">
                       <Gamepad2 className="text-white/40 group-hover:text-cadmium-red transition-colors" size={32} />
                     </div>
                     <div className="relative">
@@ -290,7 +280,7 @@ export default function App() {
                           e.stopPropagation();
                           setActiveMenu(activeMenu === game.id ? null : game.id);
                         }}
-                        className="p-3 text-white/20 hover:text-white hover:bg-white/10 rounded-2xl transition-all duration-300"
+                        className="p-3 text-white/20 hover:text-white hover:bg-white/10 rounded-sm transition-all duration-200"
                         title="Game Options"
                       >
                         <MoreVertical size={20} />
@@ -301,7 +291,7 @@ export default function App() {
                             initial={{ opacity: 0, y: 10, scale: 0.95 }}
                             animate={{ opacity: 1, y: 0, scale: 1 }}
                             exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                            className="absolute right-0 mt-2 w-48 bg-cadmium-dark border border-white/10 rounded-2xl shadow-2xl z-20 overflow-hidden"
+                            className="absolute right-0 mt-2 w-48 bg-cadmium-dark border border-white/10 rounded-sm shadow-md z-20 overflow-hidden"
                           >
                             <button
                               onClick={(e) => {
@@ -340,10 +330,10 @@ export default function App() {
                   
                   <button
                     onClick={() => launchGame(game.id)}
-                    className="mt-8 w-full flex items-center justify-center gap-3 bg-white text-black font-black py-4 rounded-2xl hover:bg-cadmium-red hover:text-white transition-all active:scale-95 shadow-lg group-hover:shadow-cadmium-red/20"
+                    className="mt-8 w-full flex items-center justify-center gap-3 bg-white text-black font-black py-4 rounded-sm hover:bg-cadmium-red hover:text-white transition-all active:scale-95 shadow-lg group-hover:shadow-cadmium-red/20"
                   >
                     <Play size={20} fill="currentColor" />
-                    LAUNCH ENGINE
+                    LAUNCH
                   </button>
                 </div>
               </motion.div>
@@ -351,7 +341,7 @@ export default function App() {
           </AnimatePresence>
 
           {games.length === 0 && !isImporting && (
-            <div className="col-span-full py-32 flex flex-col items-center justify-center border-2 border-dashed border-white/5 rounded-[3rem] bg-white/[0.02]">
+            <div className="col-span-full py-32 flex flex-col items-center justify-center border-2 border-dashed border-white/5 rounded-sm bg-white/[0.02]">
               <div className="bg-white/5 p-8 rounded-full mb-6">
                 <Layers className="text-white/10" size={64} />
               </div>
@@ -373,11 +363,13 @@ export default function App() {
           >
             {/* Hitbox for status bar - Always on top */}
             <div 
-              className="fixed bottom-0 left-0 right-0 h-[5px] z-[100] cursor-pointer"
-              onMouseMove={() => {
+              className="fixed bottom-0 left-0 right-0 h-[15px] z-[100] cursor-pointer"
+              onMouseEnter={() => {
                 setShowOverlayBar(true);
                 if (barTimeoutRef.current) window.clearTimeout(barTimeoutRef.current);
-                barTimeoutRef.current = window.setTimeout(() => setShowOverlayBar(false), 3000);
+              }}
+              onMouseLeave={() => {
+                barTimeoutRef.current = window.setTimeout(() => setShowOverlayBar(false), 2000);
               }}
             />
             <AnimatePresence>
@@ -397,7 +389,7 @@ export default function App() {
                     className="flex items-center gap-2 bg-cadmium-red/10 hover:bg-cadmium-red text-cadmium-red hover:text-white px-3 py-1 rounded-full text-[9px] font-bold transition-all uppercase tracking-wider border border-cadmium-red/20"
                   >
                     <X size={12} />
-                    Kill Process
+                    Quit
                   </button>
                 </motion.div>
               )}
@@ -450,7 +442,7 @@ export default function App() {
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-cadmium-dark border border-white/10 rounded-[2rem] w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col shadow-2xl"
+              className="bg-cadmium-dark border border-white/10 rounded-sm w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col shadow-md"
             >
               <div className="p-6 border-b border-white/10 flex items-center justify-between bg-white/5">
                 <div className="flex items-center gap-3">
@@ -475,7 +467,7 @@ export default function App() {
                       const isData = file.startsWith('data/');
                       const isWWW = file.startsWith('www/');
                       return (
-                        <div key={idx} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5 hover:border-white/10 transition-colors group">
+                        <div key={idx} className="flex items-center justify-between p-3 bg-white/5 rounded-sm border border-white/5 hover:border-white/10 transition-colors group">
                           <div className="flex items-center gap-3">
                             {isData ? (
                               <Layers size={16} className="text-cadmium-red" />
@@ -502,7 +494,7 @@ export default function App() {
               <div className="p-6 bg-white/5 border-t border-white/10 flex justify-end">
                 <button 
                   onClick={() => setBrowsingGame(null)}
-                  className="px-6 py-2 bg-white text-black font-bold rounded-xl text-xs uppercase tracking-widest hover:bg-cadmium-red hover:text-white transition-all"
+                  className="px-6 py-2 bg-white text-black font-bold rounded-sm text-xs uppercase tracking-widest hover:bg-cadmium-red hover:text-white transition-all"
                 >
                   Close Explorer
                 </button>
@@ -525,7 +517,7 @@ export default function App() {
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-cadmium-dark border border-white/10 rounded-[2rem] w-full max-w-md overflow-hidden shadow-2xl"
+              className="bg-cadmium-dark border border-white/10 rounded-sm w-full max-w-md overflow-hidden shadow-md"
             >
               <div className="p-6 border-b border-white/10 flex items-center justify-between bg-white/5">
                 <div className="flex items-center gap-3">
@@ -541,7 +533,7 @@ export default function App() {
               </div>
               
               <div className="p-8">
-                <div className="mb-8 p-6 bg-white/5 rounded-2xl border border-white/5">
+                <div className="mb-8 p-6 bg-white/5 rounded-sm border border-white/5">
                   <h3 className="text-cadmium-red font-bold uppercase tracking-widest text-xs mb-4 flex items-center gap-2">
                     <FileCode size={16} />
                     Game Stripper (EXPERIMENTAL)
@@ -552,7 +544,7 @@ export default function App() {
                   
                   <div className="flex gap-2">
                     <select 
-                      className="flex-1 bg-cadmium-dark/40 border border-white/10 rounded-xl px-4 py-2 text-xs font-mono outline-none focus:border-cadmium-red/50 transition-colors"
+                      className="flex-1 bg-cadmium-dark/40 border border-white/10 rounded-sm px-4 py-2 text-xs font-mono outline-none focus:border-cadmium-red/50 transition-colors"
                       onChange={(e) => setStrippingGame(e.target.value)}
                       value={strippingGame || ""}
                     >
@@ -568,7 +560,7 @@ export default function App() {
                           workerRef.current?.postMessage({ type: 'STRIP_GAME', payload: { gameId: strippingGame } });
                         }
                       }}
-                      className={`px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all ${
+                      className={`px-4 py-2 rounded-sm font-bold text-[10px] uppercase tracking-widest transition-all ${
                         strippingGame ? 'bg-cadmium-red text-white hover:bg-cadmium-orange' : 'bg-white/5 text-white/20'
                       }`}
                     >
@@ -577,14 +569,14 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="bg-cadmium-red/10 border border-cadmium-red/20 rounded-2xl p-6 mb-6">
+                <div className="bg-cadmium-red/10 border border-cadmium-red/20 rounded-sm p-6 mb-6">
                   <h3 className="text-cadmium-red font-bold uppercase tracking-widest text-xs mb-2">Nuclear Storage Purge</h3>
                   <p className="text-[10px] text-cadmium-red/80 leading-relaxed mb-4">
                     This action will permanently delete ALL games and ALL save data stored in the Cadmium VFS. This cannot be undone.
                   </p>
                   
                   <div className="space-y-4">
-                    <div className="flex items-center justify-between bg-cadmium-dark/40 p-3 rounded-xl border border-white/5">
+                    <div className="flex items-center justify-between bg-cadmium-dark/40 p-3 rounded-sm border border-white/5">
                       <span className="text-[10px] font-mono text-white/70 uppercase tracking-widest">Confirmation Code:</span>
                       <span className="text-sm font-mono font-bold text-white tracking-[0.3em]">{purgeTarget}</span>
                     </div>
@@ -600,7 +592,7 @@ export default function App() {
                         }
                       }}
                       placeholder="TYPE CODE TO CONFIRM"
-                      className="w-full bg-cadmium-dark/40 border border-white/10 rounded-xl px-4 py-3 text-center font-mono text-sm tracking-widest focus:border-cadmium-red/50 outline-none transition-colors"
+                      className="w-full bg-cadmium-dark/40 border border-white/10 rounded-sm px-4 py-3 text-center font-mono text-sm tracking-widest focus:border-cadmium-red/50 outline-none transition-colors"
                     />
                     
                     <button 
@@ -609,7 +601,7 @@ export default function App() {
                         workerRef.current?.postMessage({ type: 'CLEAR_ALL' });
                         setShowGlobalSettings(false);
                       }}
-                      className={`w-full py-4 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all ${
+                      className={`w-full py-4 rounded-sm font-black text-xs uppercase tracking-[0.2em] transition-all ${
                         purgeConfirmation === purgeTarget 
                           ? 'bg-cadmium-red text-white shadow-lg shadow-cadmium-red/40 hover:scale-[1.02] active:scale-95' 
                           : 'bg-white/5 text-white/20 cursor-not-allowed'
@@ -623,7 +615,7 @@ export default function App() {
                 <div className="space-y-4 mb-8">
                   <button 
                     onClick={() => window.location.reload()}
-                    className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/5 transition-all group"
+                    className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 rounded-sm border border-white/5 transition-all group"
                   >
                     <div className="flex items-center gap-3">
                       <Layers size={18} className="text-white/40 group-hover:text-white transition-colors" />
@@ -655,7 +647,7 @@ export default function App() {
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-cadmium-dark border border-white/10 rounded-[2rem] w-full max-w-sm overflow-hidden shadow-2xl"
+              className="bg-cadmium-dark border border-white/10 rounded-sm w-full max-w-sm overflow-hidden shadow-md"
             >
               <div className="p-8 text-center">
                 <div className="w-16 h-16 bg-cadmium-red/10 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -669,13 +661,13 @@ export default function App() {
                 <div className="flex gap-3">
                   <button 
                     onClick={() => setDeleteTarget(null)}
-                    className="flex-1 py-4 bg-white/5 hover:bg-white/10 rounded-xl font-bold text-[10px] uppercase tracking-[0.2em] transition-all"
+                    className="flex-1 py-4 bg-white/5 hover:bg-white/10 rounded-sm font-bold text-[10px] uppercase tracking-[0.2em] transition-all"
                   >
                     Cancel
                   </button>
                   <button 
                     onClick={confirmDelete}
-                    className="flex-1 py-4 bg-cadmium-red hover:bg-cadmium-orange text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] transition-all shadow-lg shadow-cadmium-red/40"
+                    className="flex-1 py-4 bg-cadmium-red hover:bg-cadmium-orange text-white rounded-sm font-black text-[10px] uppercase tracking-[0.2em] transition-all shadow-lg shadow-cadmium-red/40"
                   >
                     Confirm Delete
                   </button>
