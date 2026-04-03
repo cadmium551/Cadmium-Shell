@@ -32,7 +32,7 @@ self.onmessage = async (e) => {
           await writable.close();
         }
         if (payload.isLast !== false) {
-          self.postMessage({ type: "WRITE_SUCCESS", gameId });
+          self.postMessage({ type: "WRITE_SUCCESS", gameId, mainFile: payload.mainFile });
         }
       } catch (error) {
         self.postMessage({ type: "ERROR", error: error.message, gameId: payload?.gameId });
@@ -52,7 +52,27 @@ self.onmessage = async (e) => {
         for await (const [name, handle] of root.entries()) {
           // Only list directories that aren't the legacy "games" or "saves" folders
           if (handle.kind === "directory" && name !== "games" && name !== "saves") {
-            games.push(name);
+            let mainFile = 'index.html';
+            try {
+              const wwwDir = await handle.getDirectoryHandle("www");
+              let hasIndex = false;
+              let firstHtml = null;
+              for await (const [fileName, fileHandle] of wwwDir.entries()) {
+                if (fileHandle.kind === 'file' && fileName.endsWith('.html')) {
+                  if (fileName.toLowerCase() === 'index.html') {
+                    hasIndex = true;
+                    break;
+                  }
+                  if (!firstHtml) firstHtml = fileName;
+                }
+              }
+              if (!hasIndex && firstHtml) {
+                mainFile = firstHtml;
+              }
+            } catch (e) {
+              // Ignore if www doesn't exist yet
+            }
+            games.push({ id: name, mainFile });
           }
         }
         self.postMessage({ type: "LIST_SUCCESS", games, gameId: "LIST" });
