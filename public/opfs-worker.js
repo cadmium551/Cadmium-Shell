@@ -38,23 +38,7 @@ self.onmessage = async (e) => {
         for await (const [name, handle] of root.entries()) {
           // Only list directories that aren't the legacy "games" or "saves" folders
           if (handle.kind === "directory" && name !== "games" && name !== "saves") {
-            let displayName = name;
-            try {
-              const metaHandle = await handle.getFileHandle("metadata.json");
-              const file = await metaHandle.getFile();
-              const text = await file.text();
-              const meta = JSON.parse(text);
-              if (meta.name) displayName = meta.name;
-            } catch (e) {
-              // Metadata doesn't exist or is invalid, fallback to directory name
-            }
-            
-            // Visually strip .html if it hasn't been explicitly renamed
-            if (displayName === name && displayName.toLowerCase().endsWith('.html')) {
-              displayName = displayName.slice(0, -5);
-            }
-            
-            games.push({ id: name, name: displayName });
+            games.push(name);
           }
         }
         self.postMessage({ type: "LIST_SUCCESS", games, gameId: "LIST" });
@@ -151,25 +135,6 @@ self.onmessage = async (e) => {
           });
         } catch (e) {
           self.postMessage({ type: "ERROR", error: `Stripping failed: ${e.message}`, gameId });
-        }
-        break;
-      }
-
-      case "RENAME_GAME": {
-        const { oldId, newId } = payload;
-        try {
-          const gameDir = await root.getDirectoryHandle(oldId);
-          
-          // Instead of moving the directory (which breaks hardcoded paths in games),
-          // we just save a metadata.json file with the new display name.
-          const metaHandle = await gameDir.getFileHandle("metadata.json", { create: true });
-          const writable = await metaHandle.createWritable();
-          await writable.write(JSON.stringify({ name: newId }));
-          await writable.close();
-
-          self.postMessage({ type: "RENAME_SUCCESS", oldId, newId });
-        } catch (e) {
-          self.postMessage({ type: "ERROR", error: `Rename failed: ${e.message}`, gameId: oldId });
         }
         break;
       }
