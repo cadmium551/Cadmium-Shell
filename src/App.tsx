@@ -93,7 +93,7 @@ export default function App() {
       
       if (type === 'LIST_SUCCESS') {
         console.log(`[Cadmium] Games list updated: ${fetchedGames.length} games found`);
-        setGames(fetchedGames.map((g: any) => typeof g === 'string' ? { id: g, name: g } : g));
+        setGames(fetchedGames.map((id: string) => ({ id, name: id })));
       } else if (type === 'WRITE_SUCCESS' || type === 'DELETE_SUCCESS') {
         console.log(`[Cadmium] Operation success: ${type} for ${gameId}`);
         if (type === 'WRITE_SUCCESS') {
@@ -114,9 +114,6 @@ export default function App() {
         console.log(`[Cadmium] Game data loaded for ${gameId}`);
         const iframe = document.querySelector('iframe');
         iframe?.contentWindow?.postMessage({ type: 'LOAD_RESPONSE', data }, '*');
-      } else if (type === 'RENAME_SUCCESS') {
-        console.log(`[Cadmium] Game renamed: ${e.data.oldId} -> ${e.data.newId}`);
-        refreshGames();
       } else if (type === 'STRIP_SUCCESS') {
         console.log(`[Cadmium] Strip successful for ${e.data.gameId}. Saved ${e.data.savings} bytes.`);
         setStrippingGame(null);
@@ -318,18 +315,6 @@ export default function App() {
                             >
                               <Folder size={16} className="text-cadmium-red" />
                               Browse Files
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setRenameTarget(game.id);
-                                setRenameValue(game.name);
-                                setActiveMenu(null);
-                              }}
-                              className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-white/5 transition-colors border-t border-white/5"
-                            >
-                              <Layers size={16} className="text-cadmium-red" />
-                              Rename Game
                             </button>
                             <button
                               onClick={(e) => {
@@ -693,66 +678,6 @@ export default function App() {
                     className="flex-1 py-4 bg-cadmium-red hover:bg-cadmium-orange text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] transition-all shadow-lg shadow-cadmium-red/40"
                   >
                     Confirm Delete
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Rename Modal */}
-      <AnimatePresence>
-        {renameTarget && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[70] bg-cadmium-dark/80 backdrop-blur-sm flex items-center justify-center p-4"
-          >
-            <motion.div
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              className="bg-cadmium-dark border border-white/10 rounded-[2rem] w-full max-w-sm overflow-hidden shadow-2xl"
-            >
-              <div className="p-8">
-                <div className="w-16 h-16 bg-cadmium-red/10 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <Layers className="text-cadmium-red" size={32} />
-                </div>
-                <h2 className="text-xl font-bold mb-2 uppercase tracking-wider text-center">Rename Game</h2>
-                <p className="text-[10px] text-white/70 font-mono uppercase tracking-widest mb-6 text-center">
-                  Update display name for <span className="text-white">{renameTarget}</span>
-                </p>
-                
-                <input 
-                  type="text"
-                  value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  placeholder="New Game Name"
-                  className="w-full bg-cadmium-dark/40 border border-white/10 rounded-xl px-4 py-3 font-mono text-sm tracking-widest focus:border-cadmium-red/50 outline-none transition-colors mb-6"
-                />
-
-                <div className="flex gap-3">
-                  <button 
-                    onClick={() => setRenameTarget(null)}
-                    className="flex-1 py-4 bg-white/5 hover:bg-white/10 rounded-xl font-bold text-[10px] uppercase tracking-[0.2em] transition-all"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    onClick={() => {
-                      if (renameValue.trim()) {
-                        workerRef.current?.postMessage({ 
-                          type: 'RENAME_GAME', 
-                          payload: { oldId: renameTarget, newId: renameValue.trim() } 
-                        });
-                        setRenameTarget(null);
-                      }
-                    }}
-                    className="flex-1 py-4 bg-cadmium-red hover:bg-cadmium-orange text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] transition-all shadow-lg shadow-cadmium-red/40"
-                  >
-                    Save Name
                   </button>
                 </div>
               </div>
