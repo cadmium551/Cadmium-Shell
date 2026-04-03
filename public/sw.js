@@ -3,8 +3,10 @@
  * Serves game assets directly from the Origin Private File System (OPFS).
  */
 
-const CACHE_NAME = "cadmium-shell-v6";
-const SANDBOX_PATH = "/vfs/";
+const CACHE_NAME = "cadmium-shell-v9";
+// Determine the base path for the Service Worker
+const SW_BASE = self.location.pathname.substring(0, self.location.pathname.lastIndexOf('/') + 1);
+const SANDBOX_PATH = SW_BASE + "vfs/";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -74,10 +76,55 @@ async function handleGameAssetRequest(url, request) {
     const root = await navigator.storage.getDirectory();
     
     let gameDir;
-    try {
-      gameDir = await root.getDirectoryHandle(gameId);
-    } catch (e) {
-      return new Response(`Game directory not found: ${gameId}`, { status: 404 });
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    while (retryCount < maxRetries) {
+      try {
+        gameDir = await root.getDirectoryHandle(gameId);
+        break; // Found it!
+      } catch (e) {
+        // Fallback search
+        let found = false;
+        const available = [];
+        try {
+          for await (const [name, handle] of root.entries()) {
+            available.push(name);
+            if (handle.kind === 'directory' && (
+                name.toLowerCase() === gameId.toLowerCase() || 
+                name === gameId + '.html' || 
+                name + '.html' === gameId ||
+                name.replace(/\s+/g, '_') === gameId.replace(/\s+/g, '_')
+            )) {
+              gameDir = handle;
+              found = true;
+              break;
+            }
+          }
+        } catch (entriesError) {
+          console.error("[SW] Error listing entries:", entriesError);
+        }
+
+        if (found) break;
+
+        retryCount++;
+        if (retryCount < maxRetries) {
+          console.log(`[SW] Game ${gameId} not found, retrying (${retryCount}/${maxRetries})...`);
+          await new Promise(r => setTimeout(r, 200 * retryCount));
+        } else {
+          const errorMsg = `Game directory not found: "${gameId}". 
+            URL Path: ${url.pathname}
+            Relative Path: ${relativePath}
+            Path Parts: ${JSON.stringify(pathParts)}
+            Available Directories: [${available.join(", ")}]
+            Error: ${e.name} - ${e.message}`;
+          
+          return new Response(errorMsg, { 
+            status: 404,
+            headers: { "Content-Type": "text/plain" }
+          });
+        }
+      }
     }
 
     let current;
