@@ -3,11 +3,8 @@
  * Serves game assets directly from the Origin Private File System (OPFS).
  */
 
-const CACHE_NAME = "cadmium-shell-v4";
+const CACHE_NAME = "cadmium-shell-v5";
 const SANDBOX_PATH = "/vfs/";
-
-// In-memory cache for directory handles to drastically speed up deep path resolution
-const dirHandleCache = new Map();
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -32,7 +29,7 @@ self.addEventListener("fetch", (event) => {
 
   // Intercept requests to our local virtual file system path
   if (url.pathname.startsWith(SANDBOX_PATH)) {
-    event.respondWith(handleGameAssetRequest(url));
+    event.respondWith(handleGameAssetRequest(url, event.request));
     return;
   }
 
@@ -52,7 +49,7 @@ self.addEventListener("fetch", (event) => {
   );
 });
 
-async function handleGameAssetRequest(url) {
+async function handleGameAssetRequest(url, request) {
   try {
     // Path format: /vfs/gameId/path/to/asset
     const relativePath = url.pathname.slice(SANDBOX_PATH.length);
@@ -68,61 +65,33 @@ async function handleGameAssetRequest(url) {
 
     const root = await navigator.storage.getDirectory();
     
-    // Build a cache key for the directory path
-    const dirPathKey = `${gameId}/www/${subPaths.slice(0, -1).join('/')}`;
+    let gameDir;
+    try {
+      gameDir = await root.getDirectoryHandle(gameId);
+    } catch (e) {
+      return new Response(`Game directory not found: ${gameId}`, { status: 404 });
+    }
+
     let current;
+    try {
+      current = await gameDir.getDirectoryHandle("www");
+    } catch (e) {
+      return new Response(`Assets directory (www) not found for game: ${gameId}`, { status: 404 });
+    }
 
-    if (dirHandleCache.has(dirPathKey)) {
-      current = dirHandleCache.get(dirPathKey);
-    } else {
-      let gameDir;
+    for (let i = 0; i < subPaths.length - 1; i++) {
       try {
-        gameDir = await root.getDirectoryHandle(gameId);
+        current = await current.getDirectoryHandle(subPaths[i]);
       } catch (e) {
-        return new Response(`Game directory not found: ${gameId}`, { status: 404 });
+        return new Response(`Directory not found: ${subPaths[i]} in path ${filePath}`, { status: 404 });
       }
-
-      let wwwDir;
-      try {
-        wwwDir = await gameDir.getDirectoryHandle("www");
-      } catch (e) {
-        return new Response(`Assets directory (www) not found for game: ${gameId}`, { status: 404 });
-      }
-
-      current = wwwDir;
-      for (let i = 0; i < subPaths.length - 1; i++) {
-        try {
-          current = await current.getDirectoryHandle(subPaths[i]);
-        } catch (e) {
-          return new Response(`Directory not found: ${subPaths[i]} in path ${filePath}`, { status: 404 });
-        }
-      }
-      // Cache the resolved directory handle for future requests
-      dirHandleCache.set(dirPathKey, current);
     }
 
     let fileHandle;
     try {
       fileHandle = await current.getFileHandle(subPaths[subPaths.length - 1]);
     } catch (e) {
-      if (dirHandleCache.has(dirPathKey)) {
-        // Cache might be stale (e.g. game was deleted and re-uploaded). Clear it and retry once.
-        dirHandleCache.delete(dirPathKey);
-        try {
-          const gameDir = await root.getDirectoryHandle(gameId);
-          const wwwDir = await gameDir.getDirectoryHandle("www");
-          current = wwwDir;
-          for (let i = 0; i < subPaths.length - 1; i++) {
-            current = await current.getDirectoryHandle(subPaths[i]);
-          }
-          dirHandleCache.set(dirPathKey, current);
-          fileHandle = await current.getFileHandle(subPaths[subPaths.length - 1]);
-        } catch (retryError) {
-          return new Response(`File not found after retry: ${subPaths[subPaths.length - 1]} in path ${filePath}`, { status: 404 });
-        }
-      } else {
-        return new Response(`File not found: ${subPaths[subPaths.length - 1]} in path ${filePath}`, { status: 404 });
-      }
+      return new Response(`File not found: ${subPaths[subPaths.length - 1]} in path ${filePath}`, { status: 404 });
     }
     const file = await fileHandle.getFile();
 
@@ -150,7 +119,7 @@ async function handleGameAssetRequest(url) {
       contentType = mimeMap[ext] || 'application/octet-stream';
     }
 
-    const reqHeaders = event.request.headers;
+    const reqHeaders = request.headers;
     const rangeHeader = reqHeaders.get('Range');
 
     if (rangeHeader) {
