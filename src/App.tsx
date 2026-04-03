@@ -10,6 +10,8 @@ const APP_VERSION = "1.4.0";
 interface Game {
   id: string;
   name: string;
+  addedAt: number;
+  mainFile?: string;
 }
 
 export default function App() {
@@ -131,14 +133,16 @@ export default function App() {
     });
 
     // Send files one by one
+    let mainFile = 'index.html';
+    const htmlFiles = collectedFiles.filter(f => f.path.endsWith('.html'));
+    if (htmlFiles.length > 0) {
+      const indexFile = htmlFiles.find(f => f.path.toLowerCase() === 'index.html' || f.path.toLowerCase().endsWith('/index.html'));
+      mainFile = indexFile ? indexFile.path : htmlFiles[0].path;
+    }
+
     for (let i = 0; i < collectedFiles.length; i++) {
       const { path, file } = collectedFiles[i];
       let finalPath = path;
-      
-      // If it's a single file drop, map .html to index.html
-      if (collectedFiles.length === 1 && finalPath.endsWith('.html')) {
-        finalPath = 'index.html';
-      }
 
       const arrayBuffer = await file.arrayBuffer();
       workerRef.current?.postMessage({
@@ -146,7 +150,8 @@ export default function App() {
         payload: { 
           gameId, 
           files: [{ path: finalPath, content: arrayBuffer }], 
-          isLast: i === collectedFiles.length - 1 
+          isLast: i === collectedFiles.length - 1,
+          mainFile: i === collectedFiles.length - 1 ? mainFile : undefined
         }
       });
     }
@@ -201,17 +206,28 @@ export default function App() {
       
       if (type === 'LIST_SUCCESS') {
         console.log(`[Cadmium] Games list updated: ${fetchedGames.length} games found`);
-        setGames(fetchedGames.map((id: string) => {
+        setGames(fetchedGames.map((gameObj: any) => {
+          const id = typeof gameObj === 'string' ? gameObj : gameObj.id;
+          const mainFile = typeof gameObj === 'string' ? 'index.html' : gameObj.mainFile;
           let displayName = id;
           if (displayName.toLowerCase().endsWith('.html')) {
             displayName = displayName.slice(0, -5);
           }
-          return { id, name: displayName };
+          return { id, name: displayName, addedAt: Date.now(), mainFile };
         }));
       } else if (type === 'WRITE_SUCCESS' || type === 'DELETE_SUCCESS') {
         console.log(`[Cadmium] Operation success: ${type} for ${gameId}`);
         if (type === 'WRITE_SUCCESS') {
           console.log(`[Cadmium] Game ${gameId} imported successfully`);
+          setGames((prev: Game[]) => {
+            const existing = prev.find(g => g.id === gameId);
+            if (!existing) {
+              return [...prev, { id: gameId, name: gameId, addedAt: Date.now(), mainFile: e.data.mainFile || 'index.html' }];
+            } else if (e.data.mainFile && existing.mainFile !== e.data.mainFile) {
+              return prev.map(g => g.id === gameId ? { ...g, mainFile: e.data.mainFile } : g);
+            }
+            return prev;
+          });
         } else if (type === 'DELETE_SUCCESS') {
           console.log(`[Cadmium] Game ${gameId} deleted successfully`);
         }
@@ -281,8 +297,15 @@ export default function App() {
 
     setIsImporting(true);
     // Use the first file's name as the gameId/name
-    const mainFile = files[0];
-    const gameId = mainFile.name;
+    const firstFile = files[0];
+    const gameId = firstFile.name;
+
+    const htmlFiles = Array.from(files).filter(f => f.name.endsWith('.html'));
+    let mainFile = 'index.html';
+    if (htmlFiles.length > 0) {
+      const indexFile = htmlFiles.find(f => f.name.toLowerCase() === 'index.html');
+      mainFile = indexFile ? indexFile.name : htmlFiles[0].name;
+    }
 
     // Send an initial message to create the directory
     workerRef.current?.postMessage({
@@ -293,15 +316,17 @@ export default function App() {
     // Send files one by one
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      let path = file.name;
-      if (path.endsWith('.html')) {
-        path = 'index.html';
-      }
+      let path = file.webkitRelativePath || file.name;
       
       const arrayBuffer = await file.arrayBuffer();
       workerRef.current?.postMessage({
         type: 'WRITE_FILES',
-        payload: { gameId, files: [{ path, content: arrayBuffer }], isLast: i === files.length - 1 }
+        payload: { 
+          gameId, 
+          files: [{ path, content: arrayBuffer }], 
+          isLast: i === files.length - 1,
+          mainFile: i === files.length - 1 ? mainFile : undefined
+        }
       });
     }
 
@@ -563,7 +588,7 @@ export default function App() {
                 </div>
               ) : (
                 <iframe
-                  src={`${SANDBOX_BASE}/${encodeURIComponent(activeGame)}/index.html`}
+                  src={`${SANDBOX_BASE}/${encodeURIComponent(activeGame)}/${games.find(g => g.id === activeGame)?.mainFile || 'index.html'}`}
                   className="w-full h-full border-none bg-black"
                   sandbox="allow-scripts allow-same-origin allow-pointer-lock"
                   // Performance and capability hints
