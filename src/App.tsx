@@ -3,7 +3,8 @@ import { Upload, Play, Trash2, X, Gamepad2, Layers, FileCode, FolderOpen, MoreVe
 import { motion, AnimatePresence } from 'motion/react';
 
 // Constants - use local path for Service Worker interception
-const SANDBOX_BASE = "/vfs";
+const BASE_PATH = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+const SANDBOX_BASE = BASE_PATH + "vfs";
 const APP_VERSION = "1.4.0";
 
 interface Game {
@@ -13,6 +14,7 @@ interface Game {
 
 export default function App() {
   const [games, setGames] = useState<Game[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [activeGame, setActiveGame] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [swReady, setSwReady] = useState(false);
@@ -29,6 +31,128 @@ export default function App() {
   const [strippingGame, setStrippingGame] = useState<string | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const barTimeoutRef = useRef<number | null>(null);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const items = e.dataTransfer.items;
+    if (!items || items.length === 0) return;
+
+    setIsImporting(true);
+    
+    // Collect all files recursively
+    const collectedFiles: { path: string, file: File }[] = [];
+    let gameId = "game";
+
+    const traverseEntry = async (entry: any, path = "") => {
+      if (entry.isFile) {
+        const file = await new Promise<File>((resolve) => entry.file(resolve));
+        collectedFiles.push({ path: path ? `${path}/${file.name}` : file.name, file });
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        const entries = await new Promise<any[]>((resolve) => {
+          const allEntries: any[] = [];
+          const read = () => {
+            reader.readEntries((results: any[]) => {
+              if (results.length) {
+                allEntries.push(...results);
+                read();
+              } else {
+                resolve(allEntries);
+              }
+            });
+          };
+          read();
+        });
+        for (const child of entries) {
+          await traverseEntry(child, path ? `${path}/${entry.name}` : entry.name);
+        }
+      }
+    };
+
+    for (let i = 0; i < items.length; i++) {
+      const entry = items[i].webkitGetAsEntry();
+      if (entry) {
+        if (entry.isDirectory && items.length === 1) {
+          gameId = entry.name;
+          // Traverse the contents of the directory, but don't include the directory name in the path
+          const reader = entry.createReader();
+          const entries = await new Promise<any[]>((resolve) => {
+            const allEntries: any[] = [];
+            const read = () => {
+              reader.readEntries((results: any[]) => {
+                if (results.length) {
+                  allEntries.push(...results);
+                  read();
+                } else {
+                  resolve(allEntries);
+                }
+              });
+            };
+            read();
+          });
+          for (const child of entries) {
+            await traverseEntry(child, "");
+          }
+        } else {
+          await traverseEntry(entry, "");
+        }
+      }
+    }
+
+    if (collectedFiles.length === 0) {
+      setIsImporting(false);
+      return;
+    }
+
+    // If gameId was not set by a directory, use the first file's name
+    if (gameId === "game" && collectedFiles.length > 0) {
+      gameId = collectedFiles[0].file.name;
+    }
+
+    // Send an initial message to create the directory
+    workerRef.current?.postMessage({
+      type: 'WRITE_FILES',
+      payload: { gameId, files: [], isLast: false }
+    });
+
+    // Send files one by one
+    for (let i = 0; i < collectedFiles.length; i++) {
+      const { path, file } = collectedFiles[i];
+      let finalPath = path;
+      
+      // If it's a single file drop, map .html to index.html
+      if (collectedFiles.length === 1 && finalPath.endsWith('.html')) {
+        finalPath = 'index.html';
+      }
+
+      const arrayBuffer = await file.arrayBuffer();
+      workerRef.current?.postMessage({
+        type: 'WRITE_FILES',
+        payload: { 
+          gameId, 
+          files: [{ path: finalPath, content: arrayBuffer }], 
+          isLast: i === collectedFiles.length - 1 
+        }
+      });
+    }
+
+    setIsImporting(false);
+  };
 
   useEffect(() => {
     if (activeGame) {
@@ -159,25 +283,28 @@ export default function App() {
     // Use the first file's name as the gameId/name
     const mainFile = files[0];
     const gameId = mainFile.name;
-    const fileData = [];
 
+    // Send an initial message to create the directory
+    workerRef.current?.postMessage({
+      type: 'WRITE_FILES',
+      payload: { gameId, files: [], isLast: files.length === 0 }
+    });
+
+    // Send files one by one
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       let path = file.name;
-      // If it's the main file or any .html, we treat it as the entry index.html
-      // for the VFS to serve it correctly.
       if (path.endsWith('.html')) {
         path = 'index.html';
       }
       
       const arrayBuffer = await file.arrayBuffer();
-      fileData.push({ path, content: arrayBuffer });
+      workerRef.current?.postMessage({
+        type: 'WRITE_FILES',
+        payload: { gameId, files: [{ path, content: arrayBuffer }], isLast: i === files.length - 1 }
+      });
     }
 
-    workerRef.current?.postMessage({
-      type: 'WRITE_FILES',
-      payload: { gameId, files: fileData }
-    });
     setIsImporting(false);
     e.target.value = '';
   };
@@ -208,7 +335,29 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-cadmium-dark text-white font-sans selection:bg-cadmium-red/30">
+    <div 
+      className="min-h-screen bg-cadmium-dark text-white font-sans selection:bg-cadmium-red/30"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Drag Overlay */}
+      <AnimatePresence>
+        {isDragging && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-cadmium-red/20 backdrop-blur-md flex flex-col items-center justify-center border-4 border-dashed border-cadmium-red m-4 rounded-sm pointer-events-none"
+          >
+            <div className="bg-cadmium-dark p-8 rounded-full shadow-2xl shadow-cadmium-red/20 mb-6">
+              <Upload size={64} className="text-cadmium-red animate-bounce" />
+            </div>
+            <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-2">Drop to Import</h2>
+            <p className="text-white/60 font-mono text-sm uppercase tracking-widest">HTML Files or Game Directories</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Header */}
       <header className="border-b border-white/5 p-6 flex flex-col lg:flex-row items-center justify-between bg-cadmium-dark sticky top-0 z-10 gap-4">
         <div className="flex items-center gap-3">
@@ -293,6 +442,18 @@ export default function App() {
                             exit={{ opacity: 0, y: 10, scale: 0.95 }}
                             className="absolute right-0 mt-2 w-48 bg-cadmium-dark border border-white/10 rounded-sm shadow-md z-20 overflow-hidden"
                           >
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setRenameTarget(game.id);
+                                setRenameValue(game.name);
+                                setActiveMenu(null);
+                              }}
+                              className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-white/5 transition-colors"
+                            >
+                              <FileCode size={16} className="text-white/40" />
+                              Rename Game
+                            </button>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -623,6 +784,29 @@ export default function App() {
                     </div>
                     <span className="text-[10px] font-mono text-white/20">FORCE REFRESH</span>
                   </button>
+
+                  <button 
+                    onClick={async () => {
+                      if ('serviceWorker' in navigator) {
+                        const registrations = await navigator.serviceWorker.getRegistrations();
+                        for (const registration of registrations) {
+                          await registration.unregister();
+                        }
+                      }
+                      const cacheNames = await caches.keys();
+                      for (const name of cacheNames) {
+                        await caches.delete(name);
+                      }
+                      window.location.reload();
+                    }}
+                    className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 rounded-sm border border-white/5 transition-all group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Settings size={18} className="text-white/40 group-hover:text-white transition-colors" />
+                      <span className="text-xs font-bold uppercase tracking-wider">Reset Engine</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-white/20">CLEAR CACHE & SW</span>
+                  </button>
                 </div>
 
                 <div className="flex items-center justify-between text-[10px] font-mono text-white/20 uppercase tracking-widest px-2">
@@ -634,6 +818,60 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+      {/* Rename Modal */}
+      <AnimatePresence>
+        {renameTarget && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] bg-cadmium-dark/80 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-cadmium-dark border border-white/10 rounded-sm w-full max-w-sm overflow-hidden shadow-md"
+            >
+              <div className="p-8">
+                <h2 className="text-xl font-bold mb-6 uppercase tracking-wider">Rename Game</h2>
+                <input 
+                  type="text"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-sm px-4 py-3 text-sm font-mono focus:border-cadmium-red/50 outline-none transition-colors mb-6"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      // Visual only rename as per requirements
+                      setGames(prev => prev.map(g => g.id === renameTarget ? { ...g, name: renameValue } : g));
+                      setRenameTarget(null);
+                    }
+                  }}
+                />
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => setRenameTarget(null)}
+                    className="flex-1 py-4 bg-white/5 hover:bg-white/10 rounded-sm font-bold text-[10px] uppercase tracking-[0.2em] transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setGames(prev => prev.map(g => g.id === renameTarget ? { ...g, name: renameValue } : g));
+                      setRenameTarget(null);
+                    }}
+                    className="flex-1 py-4 bg-cadmium-red hover:bg-cadmium-orange text-white rounded-sm font-black text-[10px] uppercase tracking-[0.2em] transition-all shadow-lg shadow-cadmium-red/40"
+                  >
+                    Save Name
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Delete Confirmation Modal */}
       <AnimatePresence>
         {deleteTarget && (
