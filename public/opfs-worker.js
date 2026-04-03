@@ -48,6 +48,12 @@ self.onmessage = async (e) => {
             } catch (e) {
               // Metadata doesn't exist or is invalid, fallback to directory name
             }
+            
+            // Visually strip .html if it hasn't been explicitly renamed
+            if (displayName === name && displayName.toLowerCase().endsWith('.html')) {
+              displayName = displayName.slice(0, -5);
+            }
+            
             games.push({ id: name, name: displayName });
           }
         }
