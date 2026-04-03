@@ -2,15 +2,17 @@
  * OPFS Worker for high-performance file operations and game saves.
  */
 
+let writeQueue = Promise.resolve();
+
 self.onmessage = async (e) => {
   const { type, payload } = e.data;
 
-  try {
-    const root = await navigator.storage.getDirectory();
-    if (!root) throw new Error("OPFS Root unavailable");
+  if (type === "WRITE_FILES") {
+    writeQueue = writeQueue.then(async () => {
+      try {
+        const root = await navigator.storage.getDirectory();
+        if (!root) throw new Error("OPFS Root unavailable");
 
-    switch (type) {
-      case "WRITE_FILES": {
         const { gameId, files } = payload;
         // New structure: /{gameId}/www/
         const gameDir = await root.getDirectoryHandle(gameId, { create: true });
@@ -29,9 +31,21 @@ self.onmessage = async (e) => {
           await writable.write(file.content);
           await writable.close();
         }
-        self.postMessage({ type: "WRITE_SUCCESS", gameId });
-        break;
+        if (payload.isLast !== false) {
+          self.postMessage({ type: "WRITE_SUCCESS", gameId });
+        }
+      } catch (error) {
+        self.postMessage({ type: "ERROR", error: error.message, gameId: payload?.gameId });
       }
+    });
+    return;
+  }
+
+  try {
+    const root = await navigator.storage.getDirectory();
+    if (!root) throw new Error("OPFS Root unavailable");
+
+    switch (type) {
 
       case "LIST_GAMES": {
         const games = [];
