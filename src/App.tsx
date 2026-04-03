@@ -230,7 +230,7 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-xl font-bold tracking-tight uppercase italic flex items-center gap-2">
-              Cadmium Shell :)
+              Cadmium Shell
               <span className="text-[10px] not-italic font-mono bg-white/10 px-1.5 py-0.5 rounded text-white/70">v{APP_VERSION}</span>
             </h1>
           </div>
@@ -358,7 +358,7 @@ export default function App() {
                     className="mt-8 w-full flex items-center justify-center gap-3 bg-white text-black font-black py-4 rounded-2xl hover:bg-cadmium-red hover:text-white transition-all active:scale-95 shadow-lg group-hover:shadow-cadmium-red/20"
                   >
                     <Play size={20} fill="currentColor" />
-                    LAUNCH GAME
+                    LAUNCH ENGINE
                   </button>
                 </div>
               </motion.div>
@@ -405,14 +405,14 @@ export default function App() {
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-1.5 h-1.5 bg-cadmium-red rounded-full" />
-                    <span className="text-[9px] font-mono uppercase tracking-widest text-white/80">Game Running</span>
+                    <span className="text-[9px] font-mono uppercase tracking-widest text-white/80">Process Active</span>
                   </div>
                   <button 
                     onClick={killGame}
                     className="flex items-center gap-2 bg-cadmium-red/10 hover:bg-cadmium-red text-cadmium-red hover:text-white px-3 py-1 rounded-full text-[9px] font-bold transition-all uppercase tracking-wider border border-cadmium-red/20"
                   >
                     <X size={12} />
-                    Stop
+                    Kill Process
                   </button>
                 </motion.div>
               )}
@@ -425,7 +425,7 @@ export default function App() {
                 </div>
               ) : (
                 <iframe
-                  src={`${SANDBOX_BASE}/${activeGame}/index.html`}
+                  src={`${SANDBOX_BASE}/${encodeURIComponent(activeGame)}/index.html`}
                   className="w-full h-full border-none bg-black"
                   sandbox="allow-scripts allow-same-origin allow-pointer-lock"
                   // Performance and capability hints
