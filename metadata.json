@@ -1,0 +1,5 @@
+{
+  "name": "Cadmium Shell",
+  "description": "A high-performance, minimalist PWA shell for hosting and managing HTML5 games with OPFS storage and Service Worker proxying.",
+  "requestFramePermissions": []
+}
