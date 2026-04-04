@@ -97,17 +97,22 @@ export default function App() {
     }
 
     // Initialize OPFS Worker
-    workerRef.current = new Worker('/opfs-worker.js');
+    workerRef.current = new Worker('/opfs-worker.js?v=2');
     workerRef.current.onmessage = (e) => {
       const { type, games: fetchedGames, error, gameId, data } = e.data;
       
       if (type === 'LIST_SUCCESS') {
         console.log(`[Cadmium] Games list updated: ${fetchedGames.length} games found`);
-        setGames(fetchedGames.map((game: any) => ({ 
-          id: game.id, 
-          name: game.id,
-          mainFile: game.mainFile 
-        })));
+        setGames(fetchedGames.map((game: any) => {
+          if (typeof game === 'string') {
+            return { id: game, name: game, mainFile: 'index.html' };
+          }
+          return { 
+            id: game.id, 
+            name: game.id,
+            mainFile: game.mainFile 
+          };
+        }));
       } else if (type === 'WRITE_SUCCESS' || type === 'DELETE_SUCCESS') {
         console.log(`[Cadmium] Operation success: ${type} for ${gameId}`);
         if (type === 'WRITE_SUCCESS') {
