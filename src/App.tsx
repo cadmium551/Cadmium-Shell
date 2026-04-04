@@ -69,7 +69,6 @@ export default function App() {
       })
         .then(reg => {
           console.log('[Cadmium] SW registered');
-          if (reg.active) setSwReady(true);
           
           reg.onupdatefound = () => {
             const installingWorker = reg.installing;
@@ -446,7 +445,6 @@ export default function App() {
                 <iframe
                   src={`${SANDBOX_BASE}/${activeGame}/${games.find(g => g.id === activeGame)?.mainFile || 'index.html'}`}
                   className="w-full h-full border-none bg-black"
-                  sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-forms"
                   // Performance and capability hints
                   allow="autoplay; fullscreen; gamepad; microphone; camera; midi; encrypted-media; xr-spatial-tracking; clipboard-read; clipboard-write; cross-origin-isolated"
                   loading="eager"
