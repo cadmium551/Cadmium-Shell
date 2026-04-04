@@ -9,6 +9,7 @@ const APP_VERSION = "1.4.0";
 interface Game {
   id: string;
   name: string;
+  mainFile?: string;
 }
 
 export default function App() {
@@ -62,7 +63,10 @@ export default function App() {
     
     // Register Service Worker
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js')
+      navigator.serviceWorker.register('/sw.js', {
+        // @ts-ignore
+        type: import.meta.env?.DEV ? 'module' : 'classic'
+      })
         .then(reg => {
           console.log('[Cadmium] SW registered');
           if (reg.active) setSwReady(true);
@@ -99,7 +103,11 @@ export default function App() {
       
       if (type === 'LIST_SUCCESS') {
         console.log(`[Cadmium] Games list updated: ${fetchedGames.length} games found`);
-        setGames(fetchedGames.map((id: string) => ({ id, name: id })));
+        setGames(fetchedGames.map((game: any) => ({ 
+          id: game.id, 
+          name: game.id,
+          mainFile: game.mainFile 
+        })));
       } else if (type === 'WRITE_SUCCESS' || type === 'DELETE_SUCCESS') {
         console.log(`[Cadmium] Operation success: ${type} for ${gameId}`);
         if (type === 'WRITE_SUCCESS') {
@@ -431,7 +439,7 @@ export default function App() {
                 </div>
               ) : (
                 <iframe
-                  src={`${SANDBOX_BASE}/${activeGame}/index.html`}
+                  src={`${SANDBOX_BASE}${activeGame}/${games.find(g => g.id === activeGame)?.mainFile || 'index.html'}`}
                   className="w-full h-full border-none bg-black"
                   sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-forms"
                   // Performance and capability hints
