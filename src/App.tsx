@@ -9,7 +9,6 @@ const APP_VERSION = "1.4.0";
 interface Game {
   id: string;
   name: string;
-  mainFile?: string;
 }
 
 export default function App() {
@@ -63,22 +62,10 @@ export default function App() {
     
     // Register Service Worker
     if ('serviceWorker' in navigator) {
-      // Unregister any rogue game Service Workers
-      navigator.serviceWorker.getRegistrations().then(registrations => {
-        for (let registration of registrations) {
-          if (registration.scope.includes('/vfs/')) {
-            console.log('[Cadmium] Unregistering rogue game SW:', registration.scope);
-            registration.unregister();
-          }
-        }
-      });
-
-      navigator.serviceWorker.register('/sw.js', {
-        // @ts-ignore
-        type: import.meta.env?.DEV ? 'module' : 'classic'
-      })
+      navigator.serviceWorker.register('/sw.js')
         .then(reg => {
           console.log('[Cadmium] SW registered');
+          if (reg.active) setSwReady(true);
           
           reg.onupdatefound = () => {
             const installingWorker = reg.installing;
@@ -98,31 +85,21 @@ export default function App() {
         setSwReady(true);
       }
 
-      const handleControllerChange = () => {
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (navigator.serviceWorker.controller) {
           setSwReady(true);
         }
-      };
-      navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+      });
     }
 
     // Initialize OPFS Worker
-    workerRef.current = new Worker('/opfs-worker.js?v=2');
+    workerRef.current = new Worker('/opfs-worker.js');
     workerRef.current.onmessage = (e) => {
       const { type, games: fetchedGames, error, gameId, data } = e.data;
       
       if (type === 'LIST_SUCCESS') {
         console.log(`[Cadmium] Games list updated: ${fetchedGames.length} games found`);
-        setGames(fetchedGames.map((game: any) => {
-          if (typeof game === 'string') {
-            return { id: game, name: game, mainFile: 'index.html' };
-          }
-          return { 
-            id: game.id, 
-            name: game.id,
-            mainFile: game.mainFile 
-          };
-        }));
+        setGames(fetchedGames.map((game: any) => ({ id: game.id, name: game.id })));
       } else if (type === 'WRITE_SUCCESS' || type === 'DELETE_SUCCESS') {
         console.log(`[Cadmium] Operation success: ${type} for ${gameId}`);
         if (type === 'WRITE_SUCCESS') {
@@ -134,7 +111,7 @@ export default function App() {
           console.log('[Cadmium] All storage cleared');
           setGames([]);
         }
-        workerRef.current?.postMessage({ type: 'LIST_GAMES' });
+        refreshGames();
       } else if (type === 'LIST_FILES_SUCCESS') {
         setGameFiles(e.data.files);
       } else if (type === 'SAVE_SUCCESS') {
@@ -145,7 +122,7 @@ export default function App() {
         iframe?.contentWindow?.postMessage({ type: 'LOAD_RESPONSE', data }, '*');
       } else if (type === 'RENAME_SUCCESS') {
         console.log(`[Cadmium] Game renamed: ${e.data.oldId} -> ${e.data.newId}`);
-        workerRef.current?.postMessage({ type: 'LIST_GAMES' });
+        refreshGames();
       } else if (type === 'STRIP_SUCCESS') {
         console.log(`[Cadmium] Strip successful for ${e.data.gameId}. Saved ${e.data.savings} bytes.`);
         setStrippingGame(null);
@@ -154,26 +131,6 @@ export default function App() {
       }
     };
 
-    workerRef.current?.postMessage({ type: 'LIST_GAMES' });
-
-    const handleGlobalClick = () => setActiveMenu(null);
-    window.addEventListener('click', handleGlobalClick);
-
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      // Prompt user before closing to prevent accidental loss (Ctrl+W)
-      e.preventDefault();
-      e.returnValue = '';
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
-    return () => {
-      workerRef.current?.terminate();
-      window.removeEventListener('click', handleGlobalClick);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, []);
-
-  useEffect(() => {
     const handleGameMessage = (e: MessageEvent) => {
       if (e.data?.type === 'SAVE_REQUEST' && activeGame) {
         workerRef.current?.postMessage({ 
@@ -189,7 +146,24 @@ export default function App() {
     };
 
     window.addEventListener('message', handleGameMessage);
-    return () => window.removeEventListener('message', handleGameMessage);
+    refreshGames();
+
+    const handleGlobalClick = () => setActiveMenu(null);
+    window.addEventListener('click', handleGlobalClick);
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Prompt user before closing to prevent accidental loss (Ctrl+W)
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      workerRef.current?.terminate();
+      window.removeEventListener('message', handleGameMessage);
+      window.removeEventListener('click', handleGlobalClick);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
   }, [activeGame]);
 
   const refreshGames = () => {
@@ -227,25 +201,11 @@ export default function App() {
     e.target.value = '';
   };
 
-  const launchGame = async (id: string) => {
-    const isSwActive = !!navigator.serviceWorker?.controller;
-    
-    if (!isSwActive) {
-      alert("Service Worker is not active. This is required to load game files. Please refresh the page normally (do not hard-reload) to enable it.");
+  const launchGame = (id: string) => {
+    if (!swReady) {
+      alert("Cadmium Engine is still initializing. Please wait a moment.");
       return;
     }
-
-    // Double-check and unregister any rogue game Service Workers before launching
-    if ('serviceWorker' in navigator) {
-      const registrations = await navigator.serviceWorker.getRegistrations();
-      for (let registration of registrations) {
-        if (registration.scope.includes('/vfs/')) {
-          console.log('[Cadmium] Unregistering rogue game SW before launch:', registration.scope);
-          await registration.unregister();
-        }
-      }
-    }
-
     setActiveGame(id);
   };
 
@@ -404,7 +364,7 @@ export default function App() {
                     className="mt-8 w-full flex items-center justify-center gap-3 bg-white text-black font-black py-4 rounded-2xl hover:bg-cadmium-red hover:text-white transition-all active:scale-95 shadow-lg group-hover:shadow-cadmium-red/20"
                   >
                     <Play size={20} fill="currentColor" />
-                    LAUNCH
+                    LAUNCH ENGINE
                   </button>
                 </div>
               </motion.div>
@@ -458,7 +418,7 @@ export default function App() {
                     className="flex items-center gap-2 bg-cadmium-red/10 hover:bg-cadmium-red text-cadmium-red hover:text-white px-3 py-1 rounded-full text-[9px] font-bold transition-all uppercase tracking-wider border border-cadmium-red/20"
                   >
                     <X size={12} />
-                    Quit
+                    Kill Process
                   </button>
                 </motion.div>
               )}
@@ -471,10 +431,11 @@ export default function App() {
                 </div>
               ) : (
                 <iframe
-                  src={encodeURI(`${SANDBOX_BASE}/${activeGame}/${(games.find(g => g.id === activeGame)?.mainFile || 'index.html').replace(/^\/+/, '')}`)}
+                  src={`${SANDBOX_BASE}/${activeGame}/index.html`}
                   className="w-full h-full border-none bg-black"
+                  sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-forms"
                   // Performance and capability hints
-                  allow="autoplay; fullscreen; gamepad; microphone; camera; midi; encrypted-media; xr-spatial-tracking; clipboard-read; clipboard-write"
+                  allow="autoplay; fullscreen; gamepad; microphone; camera; midi; encrypted-media; xr-spatial-tracking; clipboard-read; clipboard-write; cross-origin-isolated"
                   loading="eager"
                   title="Game Sandbox"
                 />
