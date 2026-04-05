@@ -60,6 +60,15 @@ registerRoute(
 
 async function handleGameAssetRequest(url, request) {
   try {
+    // Block game Service Workers from hijacking the scope
+    if (request.headers.get('Service-Worker') === 'script' || url.pathname.endsWith('sw.js') || url.pathname.endsWith('ServiceWorker.js')) {
+      console.log(`[Cadmium SW] Blocked game Service Worker registration: ${url.pathname}`);
+      return new Response("Game Service Workers are disabled in Cadmium", { 
+        status: 404,
+        headers: { "Content-Type": "text/plain" }
+      });
+    }
+
     // Path format: /vfs/gameId/path/to/asset
     const relativePath = url.pathname.slice(SANDBOX_PATH.length);
     const pathParts = relativePath.split("/").filter(Boolean);
@@ -205,7 +214,7 @@ async function handleGameAssetRequest(url, request) {
             "Cache-Control": "public, max-age=3600",
             "Cross-Origin-Resource-Policy": "cross-origin",
             "X-Content-Type-Options": "nosniff",
-            "Cross-Origin-Embedder-Policy": "credentialless",
+            "Cross-Origin-Embedder-Policy": "require-corp",
             "Cross-Origin-Opener-Policy": "same-origin"
           }
         });
@@ -220,7 +229,7 @@ async function handleGameAssetRequest(url, request) {
         "Cache-Control": "public, max-age=3600",
         "Cross-Origin-Resource-Policy": "cross-origin",
         "X-Content-Type-Options": "nosniff",
-        "Cross-Origin-Embedder-Policy": "credentialless",
+        "Cross-Origin-Embedder-Policy": "require-corp",
         "Cross-Origin-Opener-Policy": "same-origin"
       },
     });
