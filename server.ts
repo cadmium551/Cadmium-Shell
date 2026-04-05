@@ -12,10 +12,13 @@ async function startServer() {
 
   // Middleware for basic security headers
   app.use((req, res, next) => {
-    res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
-    res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
-    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    // Removed COOP, COEP, and CORP to maximize compatibility with Chromebooks
     next();
+  });
+
+  // Fallback for /vfs/* if Service Worker is bypassed
+  app.get("/vfs/*", (req, res) => {
+    res.status(503).send("Service Worker is not intercepting requests. Please ensure Service Workers are enabled and reload the page.");
   });
 
   if (process.env.NODE_ENV !== "production") {
