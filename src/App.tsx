@@ -92,11 +92,12 @@ export default function App() {
         setSwReady(true);
       }
 
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
+      const handleControllerChange = () => {
         if (navigator.serviceWorker.controller) {
           setSwReady(true);
         }
-      });
+      };
+      navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
     }
 
     // Initialize OPFS Worker
@@ -127,7 +128,7 @@ export default function App() {
           console.log('[Cadmium] All storage cleared');
           setGames([]);
         }
-        refreshGames();
+        workerRef.current?.postMessage({ type: 'LIST_GAMES' });
       } else if (type === 'LIST_FILES_SUCCESS') {
         setGameFiles(e.data.files);
       } else if (type === 'SAVE_SUCCESS') {
@@ -138,7 +139,7 @@ export default function App() {
         iframe?.contentWindow?.postMessage({ type: 'LOAD_RESPONSE', data }, '*');
       } else if (type === 'RENAME_SUCCESS') {
         console.log(`[Cadmium] Game renamed: ${e.data.oldId} -> ${e.data.newId}`);
-        refreshGames();
+        workerRef.current?.postMessage({ type: 'LIST_GAMES' });
       } else if (type === 'STRIP_SUCCESS') {
         console.log(`[Cadmium] Strip successful for ${e.data.gameId}. Saved ${e.data.savings} bytes.`);
         setStrippingGame(null);
@@ -147,6 +148,26 @@ export default function App() {
       }
     };
 
+    workerRef.current?.postMessage({ type: 'LIST_GAMES' });
+
+    const handleGlobalClick = () => setActiveMenu(null);
+    window.addEventListener('click', handleGlobalClick);
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Prompt user before closing to prevent accidental loss (Ctrl+W)
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      workerRef.current?.terminate();
+      window.removeEventListener('click', handleGlobalClick);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
+  useEffect(() => {
     const handleGameMessage = (e: MessageEvent) => {
       if (e.data?.type === 'SAVE_REQUEST' && activeGame) {
         workerRef.current?.postMessage({ 
@@ -162,24 +183,7 @@ export default function App() {
     };
 
     window.addEventListener('message', handleGameMessage);
-    refreshGames();
-
-    const handleGlobalClick = () => setActiveMenu(null);
-    window.addEventListener('click', handleGlobalClick);
-
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      // Prompt user before closing to prevent accidental loss (Ctrl+W)
-      e.preventDefault();
-      e.returnValue = '';
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
-    return () => {
-      workerRef.current?.terminate();
-      window.removeEventListener('message', handleGameMessage);
-      window.removeEventListener('click', handleGlobalClick);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
+    return () => window.removeEventListener('message', handleGameMessage);
   }, [activeGame]);
 
   const refreshGames = () => {
