@@ -70,6 +70,10 @@ export default function App() {
         .then(reg => {
           console.log('[Cadmium] SW registered');
           
+          if (reg.active) {
+            setSwReady(true);
+          }
+          
           reg.onupdatefound = () => {
             const installingWorker = reg.installing;
             if (installingWorker) {
