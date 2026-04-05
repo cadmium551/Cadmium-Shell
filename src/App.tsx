@@ -63,6 +63,16 @@ export default function App() {
     
     // Register Service Worker
     if ('serviceWorker' in navigator) {
+      // Unregister any rogue game Service Workers
+      navigator.serviceWorker.getRegistrations().then(registrations => {
+        for (let registration of registrations) {
+          if (registration.scope.includes('/vfs/')) {
+            console.log('[Cadmium] Unregistering rogue game SW:', registration.scope);
+            registration.unregister();
+          }
+        }
+      });
+
       navigator.serviceWorker.register('/sw.js', {
         // @ts-ignore
         type: import.meta.env?.DEV ? 'module' : 'classic'
