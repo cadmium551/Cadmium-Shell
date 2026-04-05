@@ -2,18 +2,25 @@
  * OPFS Worker for high-performance file operations and game saves.
  */
 
+let writeQueue = Promise.resolve();
+
 self.onmessage = async (e) => {
   const { type, payload } = e.data;
 
-  try {
-    const root = await navigator.storage.getDirectory();
-    if (!root) throw new Error("OPFS Root unavailable");
+  if (type === "WRITE_FILES") {
+    writeQueue = writeQueue.then(async () => {
+      try {
+        const root = await navigator.storage.getDirectory();
+        if (!root) throw new Error("OPFS Root unavailable");
+        const cadmiumGamesDir = await root.getDirectoryHandle("cadmium_games", { create: true });
 
-    switch (type) {
-      case "WRITE_FILES": {
-        const { gameId, files } = payload;
-        // New structure: /{gameId}/www/
-        const gameDir = await root.getDirectoryHandle(gameId, { create: true });
+        let { gameId, files } = payload;
+        // Normalize gameId: lowercase, replace non-alphanumeric with underscores, trim underscores
+        gameId = gameId.toLowerCase().replace(/[^a-z0-9]/gi, '_').replace(/^_+|_+$/g, '');
+        if (!gameId) gameId = "game_" + Date.now();
+
+        // New structure: /cadmium_games/{gameId}/www/
+        const gameDir = await cadmiumGamesDir.getDirectoryHandle(gameId, { create: true });
         const wwwDir = await gameDir.getDirectoryHandle("www", { create: true });
 
         for (const file of files) {
@@ -29,17 +36,53 @@ self.onmessage = async (e) => {
           await writable.write(file.content);
           await writable.close();
         }
-        self.postMessage({ type: "WRITE_SUCCESS", gameId });
-        break;
+        if (payload.isLast !== false) {
+          self.postMessage({ type: "WRITE_SUCCESS", gameId, mainFile: payload.mainFile });
+        }
+      } catch (error) {
+        self.postMessage({ type: "ERROR", error: error.message, gameId: payload?.gameId });
       }
+    });
+    return;
+  }
+
+  try {
+    const root = await navigator.storage.getDirectory();
+    if (!root) throw new Error("OPFS Root unavailable");
+
+    switch (type) {
 
       case "LIST_GAMES": {
         const games = [];
-        for await (const [name, handle] of root.entries()) {
-          // Only list directories that aren't the legacy "games" or "saves" folders
-          if (handle.kind === "directory" && name !== "games" && name !== "saves") {
-            games.push(name);
+        try {
+          const cadmiumGamesDir = await root.getDirectoryHandle("cadmium_games");
+          for await (const [name, handle] of cadmiumGamesDir.entries()) {
+            if (handle.kind === "directory") {
+              let mainFile = 'index.html';
+              try {
+                const wwwDir = await handle.getDirectoryHandle("www");
+                let hasIndex = false;
+                let firstHtml = null;
+                for await (const [fileName, fileHandle] of wwwDir.entries()) {
+                  if (fileHandle.kind === 'file' && fileName.endsWith('.html')) {
+                    if (fileName.toLowerCase() === 'index.html') {
+                      hasIndex = true;
+                      break;
+                    }
+                    if (!firstHtml) firstHtml = fileName;
+                  }
+                }
+                if (!hasIndex && firstHtml) {
+                  mainFile = firstHtml;
+                }
+              } catch (e) {
+                // Ignore if www doesn't exist yet
+              }
+              games.push({ id: name, mainFile });
+            }
           }
+        } catch (e) {
+          // cadmium_games directory doesn't exist yet, which is fine
         }
         self.postMessage({ type: "LIST_SUCCESS", games, gameId: "LIST" });
         break;
@@ -48,8 +91,12 @@ self.onmessage = async (e) => {
       case "DELETE_GAME": {
         const { gameId } = payload;
         console.log(`[Worker] Purging game directory: ${gameId}`);
-        // Deleting the root game folder deletes assets AND data/saves
-        await root.removeEntry(gameId, { recursive: true });
+        try {
+          const cadmiumGamesDir = await root.getDirectoryHandle("cadmium_games");
+          await cadmiumGamesDir.removeEntry(gameId, { recursive: true });
+        } catch (e) {
+          console.error("Failed to delete game:", e);
+        }
         self.postMessage({ type: "DELETE_SUCCESS", gameId });
         break;
       }
@@ -65,8 +112,8 @@ self.onmessage = async (e) => {
 
       case "SAVE_GAME_DATA": {
         const { gameId, data } = payload;
-        // Store saves inside the game folder: /{gameId}/data/
-        const gameDir = await root.getDirectoryHandle(gameId, { create: true });
+        const cadmiumGamesDir = await root.getDirectoryHandle("cadmium_games", { create: true });
+        const gameDir = await cadmiumGamesDir.getDirectoryHandle(gameId, { create: true });
         const dataDir = await gameDir.getDirectoryHandle("data", { create: true });
         const fileHandle = await dataDir.getFileHandle("save.json", { create: true });
         const writable = await fileHandle.createWritable();
@@ -79,7 +126,8 @@ self.onmessage = async (e) => {
       case "LOAD_GAME_DATA": {
         const { gameId } = payload;
         try {
-          const gameDir = await root.getDirectoryHandle(gameId);
+          const cadmiumGamesDir = await root.getDirectoryHandle("cadmium_games");
+          const gameDir = await cadmiumGamesDir.getDirectoryHandle(gameId);
           const dataDir = await gameDir.getDirectoryHandle("data");
           const fileHandle = await dataDir.getFileHandle("save.json");
           const file = await fileHandle.getFile();
@@ -94,7 +142,8 @@ self.onmessage = async (e) => {
       case "STRIP_GAME": {
         const { gameId } = payload;
         try {
-          const gameDir = await root.getDirectoryHandle(gameId);
+          const cadmiumGamesDir = await root.getDirectoryHandle("cadmium_games");
+          const gameDir = await cadmiumGamesDir.getDirectoryHandle(gameId);
           const wwwDir = await gameDir.getDirectoryHandle("www");
           const fileHandle = await wwwDir.getFileHandle("index.html");
           const file = await fileHandle.getFile();
@@ -104,11 +153,18 @@ self.onmessage = async (e) => {
           
           // Removal patterns
           const patterns = [
+            // 1. Remove Google Analytics / Tag Manager
             /<script\b[^>]*src=["']https?:\/\/(?:www\.)?googletagmanager\.com\/gtag\/js[^"']*["'][^>]*><\/script>/gi,
             /<script\b[^>]*src=["']https?:\/\/(?:www\.)?google-analytics\.com\/analytics\.js[^"']*["'][^>]*><\/script>/gi,
+            /<script\b[^>]*>[\s\S]*?gtag\(['"]config['"][\s\S]*?<\/script>/gi,
             /<script\b[^>]*>[\s\S]*?ga\(['"]create['"][\s\S]*?<\/script>/gi,
+            // 3. Remove sidebar ads and their containers
+            /<div\b[^>]*id=["']sidebarad[12]["'][^>]*>[\s\S]*?<\/div>/gi,
+            // 4. Remove common ad iframes
             /<iframe\b[^>]*src=["']https?:\/\/(?:[^"']+\.)?(?:doubleclick\.net|adnxs\.com|googleads\.g\.doubleclick\.net|amazon-adsystem\.com|taboola\.com|outbrain\.com|popads\.net|propellerads\.com)[^"']*["'][^>]*><\/iframe>/gi,
             /<script\b[^>]*src=["']https?:\/\/(?:[^"']+\.)?(?:adsbygoogle\.js|carbonads\.com|buysellads\.com)[^"']*["'][^>]*><\/script>/gi,
+            // 5. Remove obfuscated ad/tracking scripts (targets standard javascript-obfuscator array rotation)
+            /<script>\s*\(\s*function\s*\(\s*_0x[a-fA-F0-9]+,\s*_0x[a-fA-F0-9]+\s*\)[\s\S]*?_0x[a-fA-F0-9]+\['push'\]\([\s\S]*?<\/script>/gi,
             /window\.ga=window\.ga\|\|function\(\)\{\(ga\.q=ga\.q\|\|\[\]\)\.push\(arguments\)\};ga\.l=\+new Date;/g
           ];
 
@@ -132,30 +188,12 @@ self.onmessage = async (e) => {
         break;
       }
 
-      case "RENAME_GAME": {
-        const { oldId, newId } = payload;
-        try {
-          const oldDir = await root.getDirectoryHandle(oldId);
-          // FileSystemHandle.move is supported in modern Chromium
-          if (typeof oldDir.move === 'function') {
-            await oldDir.move(newId);
-          } else {
-            // Fallback: This is a simplified "rename" by creating a new dir and moving children
-            // In a real production app, we'd recursively copy, but move() is standard in OPFS now.
-            throw new Error("Browser does not support directory renaming via move()");
-          }
-          self.postMessage({ type: "RENAME_SUCCESS", oldId, newId });
-        } catch (e) {
-          self.postMessage({ type: "ERROR", error: `Rename failed: ${e.message}`, gameId: oldId });
-        }
-        break;
-      }
-
       case "LIST_FILES": {
         const { gameId } = payload;
         const files = [];
         try {
-          const gameDir = await root.getDirectoryHandle(gameId);
+          const cadmiumGamesDir = await root.getDirectoryHandle("cadmium_games");
+          const gameDir = await cadmiumGamesDir.getDirectoryHandle(gameId);
           
           async function scan(dir, path = "") {
             for await (const [name, handle] of dir.entries()) {
