@@ -204,7 +204,9 @@ async function handleGameAssetRequest(url, request) {
             "Access-Control-Allow-Origin": "*",
             "Cache-Control": "public, max-age=3600",
             "Cross-Origin-Resource-Policy": "cross-origin",
-            "X-Content-Type-Options": "nosniff"
+            "X-Content-Type-Options": "nosniff",
+            "Cross-Origin-Embedder-Policy": "credentialless",
+            "Cross-Origin-Opener-Policy": "same-origin"
           }
         });
       }
@@ -217,7 +219,9 @@ async function handleGameAssetRequest(url, request) {
         "Access-Control-Allow-Origin": "*",
         "Cache-Control": "public, max-age=3600",
         "Cross-Origin-Resource-Policy": "cross-origin",
-        "X-Content-Type-Options": "nosniff"
+        "X-Content-Type-Options": "nosniff",
+        "Cross-Origin-Embedder-Policy": "credentialless",
+        "Cross-Origin-Opener-Policy": "same-origin"
       },
     });
   } catch (error) {
