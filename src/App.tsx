@@ -70,10 +70,6 @@ export default function App() {
         .then(reg => {
           console.log('[Cadmium] SW registered');
           
-          if (reg.active) {
-            setSwReady(true);
-          }
-          
           reg.onupdatefound = () => {
             const installingWorker = reg.installing;
             if (installingWorker) {
@@ -223,7 +219,11 @@ export default function App() {
 
   const launchGame = (id: string) => {
     if (!swReady) {
-      alert("Cadmium Engine is still initializing. Please wait a moment.");
+      if (!navigator.serviceWorker.controller) {
+        alert("Service Worker is bypassed. If you hard-reloaded the page, please do a normal refresh (F5 or click the reload button) to enable games.");
+      } else {
+        alert("Cadmium Engine is still initializing. Please wait a moment.");
+      }
       return;
     }
     setActiveGame(id);
