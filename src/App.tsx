@@ -227,15 +227,25 @@ export default function App() {
     e.target.value = '';
   };
 
-  const launchGame = (id: string) => {
-    if (!swReady) {
-      if (!navigator.serviceWorker.controller) {
-        alert("Service Worker is bypassed. If you hard-reloaded the page, please do a normal refresh (F5 or click the reload button) to enable games.");
-      } else {
-        alert("Cadmium Engine is still initializing. Please wait a moment.");
-      }
+  const launchGame = async (id: string) => {
+    const isSwActive = !!navigator.serviceWorker?.controller;
+    
+    if (!isSwActive) {
+      alert("Service Worker is not active. This is required to load game files. Please refresh the page normally (do not hard-reload) to enable it.");
       return;
     }
+
+    // Double-check and unregister any rogue game Service Workers before launching
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (let registration of registrations) {
+        if (registration.scope.includes('/vfs/')) {
+          console.log('[Cadmium] Unregistering rogue game SW before launch:', registration.scope);
+          await registration.unregister();
+        }
+      }
+    }
+
     setActiveGame(id);
   };
 
@@ -461,10 +471,10 @@ export default function App() {
                 </div>
               ) : (
                 <iframe
-                  src={`${SANDBOX_BASE}/${activeGame}/${games.find(g => g.id === activeGame)?.mainFile || 'index.html'}`}
+                  src={encodeURI(`${SANDBOX_BASE}/${activeGame}/${(games.find(g => g.id === activeGame)?.mainFile || 'index.html').replace(/^\/+/, '')}`)}
                   className="w-full h-full border-none bg-black"
                   // Performance and capability hints
-                  allow="autoplay; fullscreen; gamepad; microphone; camera; midi; encrypted-media; xr-spatial-tracking; clipboard-read; clipboard-write; cross-origin-isolated"
+                  allow="autoplay; fullscreen; gamepad; microphone; camera; midi; encrypted-media; xr-spatial-tracking; clipboard-read; clipboard-write"
                   loading="eager"
                   title="Game Sandbox"
                 />
