@@ -30,7 +30,11 @@ export default defineConfig(({mode}) => {
       },
     },
     server: {
-      hmr: false
+      hmr: false,
+      headers: {
+        "Cross-Origin-Opener-Policy": "same-origin",
+        "Cross-Origin-Embedder-Policy": "credentialless",
+      },
     },
   };
 });
