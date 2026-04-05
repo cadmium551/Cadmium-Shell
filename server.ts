@@ -10,10 +10,8 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // Middleware to set COOP and COEP headers for SharedArrayBuffer support
+  // Middleware for basic security headers
   app.use((req, res, next) => {
-    res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
-    res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     next();
   });
