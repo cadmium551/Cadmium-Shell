@@ -86,6 +86,13 @@ async function handleGameAssetRequest(url, request) {
       return new Response("OPFS Root unavailable in Service Worker", { status: 500 });
     }
     
+    let cadmiumGamesDir;
+    try {
+      cadmiumGamesDir = await root.getDirectoryHandle("cadmium_games");
+    } catch (e) {
+      return new Response("cadmium_games directory not found", { status: 404 });
+    }
+    
     let gameDir;
     let retryCount = 0;
     const maxRetries = 3;
@@ -96,14 +103,14 @@ async function handleGameAssetRequest(url, request) {
 
     while (retryCount < maxRetries) {
       try {
-        gameDir = await root.getDirectoryHandle(gameId);
+        gameDir = await cadmiumGamesDir.getDirectoryHandle(gameId);
         break; // Found it!
       } catch (e) {
         // Fallback search
         let found = false;
         const available = [];
         try {
-          for await (const [name, handle] of root.entries()) {
+          for await (const [name, handle] of cadmiumGamesDir.entries()) {
             available.push(`${name} (${handle.kind})`);
             const normalizedName = slugify(name);
             
