@@ -384,7 +384,7 @@ export default function App() {
                     className="mt-8 w-full flex items-center justify-center gap-3 bg-white text-black font-black py-4 rounded-2xl hover:bg-cadmium-red hover:text-white transition-all active:scale-95 shadow-lg group-hover:shadow-cadmium-red/20"
                   >
                     <Play size={20} fill="currentColor" />
-                    LAUNCH ENGINE
+                    LAUNCH
                   </button>
                 </div>
               </motion.div>
@@ -451,7 +451,7 @@ export default function App() {
                       className="flex items-center gap-2 bg-cadmium-red/10 hover:bg-cadmium-red text-cadmium-red hover:text-white px-3 py-1 rounded-full text-[9px] font-bold transition-all uppercase tracking-wider border border-cadmium-red/20"
                     >
                       <X size={12} />
-                      Kill Process
+                      Quit
                     </button>
                   </div>
                 </motion.div>
