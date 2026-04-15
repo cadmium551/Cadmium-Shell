@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, RefObject } from 'react';
-import { X, Terminal, Radio, Wifi, Database, Trash2, ChevronDown, ChevronUp, Folder, File, CornerUpLeft } from 'lucide-react';
+import { X, Terminal, Radio, Wifi, Database, Trash2, Folder, File, CornerUpLeft, HardDrive } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,8 +33,8 @@ interface NetEntry {
   time: string;
 }
 
-type Tab = 'console' | 'messages' | 'network' | 'storage';
-type StorageTab = 'local' | 'session' | 'cookies' | 'opfs';
+type Tab = 'console' | 'messages' | 'network' | 'storage' | 'opfs';
+type StorageTab = 'local' | 'session' | 'cookies';
 
 interface OpfsEntry {
   name: string;
@@ -158,7 +158,6 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
           };
         });
 
-        // Forward game errors too
         iwin.addEventListener('error', (e: ErrorEvent) => {
           window.postMessage(
             { __cdvt: true, level: 'error', args: [`[game] ${e.message} (${e.filename}:${e.lineno})`] },
@@ -173,7 +172,7 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
     const iframe = iframeRef.current;
     if (iframe) {
       iframe.addEventListener('load', injectRelay);
-      injectRelay(); // try immediately if already loaded
+      injectRelay(); 
     }
 
     return () => {
@@ -185,12 +184,10 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
 
   useEffect(() => {
     const handler = (e: MessageEvent) => {
-      // Game console relay
       if (e.data?.__cdvt) {
         addLog(e.data.level as LogLevel, 'game', e.data.args);
         return;
       }
-      // Actual shell↔game messages
       if (!e.data || typeof e.data !== 'object') return;
       const dir = e.source === iframeRef.current?.contentWindow
         ? 'game→shell' as const
@@ -241,15 +238,15 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
       const dirHandle = handle || await (navigator.storage as any).getDirectory();
       currentOpfsHandleRef.current = dirHandle;
       const entries: OpfsEntry[] = [];
-      const iterator = dirHandle.entries();
+      const iterator = dirHandle.values();
       
-      for await (const [name, entryHandle] of iterator) {
+      for await (const entryHandle of iterator) {
         let size = undefined;
         if (entryHandle.kind === 'file') {
           const file = await entryHandle.getFile();
           size = file.size;
         }
-        entries.push({ name, kind: entryHandle.kind, handle: entryHandle, size });
+        entries.push({ name: entryHandle.name, kind: entryHandle.kind, handle: entryHandle, size });
       }
 
       entries.sort((a, b) => {
@@ -280,7 +277,7 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
     try {
       const file = await handle.getFile();
       const text = await file.text();
-      addLog('info', 'shell', [`[OPFS] Read file "${file.name}" (${formatBytes(file.size)}):`, text]);
+      addLog('info', 'shell', [`[OPFS] Content of "${file.name}" (${formatBytes(file.size)}):`, text]);
       setTab('console');
     } catch (err) {
       addLog('error', 'shell', ['OPFS Read File Error: ' + String(err)]);
@@ -290,7 +287,6 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
   // ─── Storage reader ───────────────────────────────────────────────────────
 
   const readStorage = useCallback((mode: StorageTab) => {
-    if (mode === 'opfs') return;
     const items: [string, string][] = [];
     try {
       if (mode === 'local') {
@@ -315,11 +311,9 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
 
   useEffect(() => {
     if (tab === 'storage') {
-      if (storeTab === 'opfs') {
-        loadOpfsDir(currentOpfsHandleRef.current);
-      } else {
-        readStorage(storeTab);
-      }
+      readStorage(storeTab);
+    } else if (tab === 'opfs') {
+      loadOpfsDir(currentOpfsHandleRef.current);
     }
   }, [tab, storeTab, readStorage, loadOpfsDir]);
 
@@ -369,15 +363,11 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
     setConsoleInput('');
   };
 
-  // ─── Filtered logs ───────────────────────────────────────────────────────
-
   const visibleLogs = logs.filter(l => {
     if (levelFilter !== 'all' && l.level !== levelFilter) return false;
     if (filter && !l.msg.toLowerCase().includes(filter.toLowerCase())) return false;
     return true;
   });
-
-  // ─── Clear current tab ───────────────────────────────────────────────────
 
   const clearTab = () => {
     if (tab === 'console') setLogs([]);
@@ -392,6 +382,7 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
     { key: 'messages', label: 'Messages', icon: <Radio size={13} />, count: msgs.length || undefined },
     { key: 'network', label: 'Network', icon: <Wifi size={13} />, count: nets.length || undefined },
     { key: 'storage', label: 'Storage', icon: <Database size={13} /> },
+    { key: 'opfs', label: 'OPFS', icon: <HardDrive size={13} /> },
   ];
 
   return (
@@ -409,7 +400,7 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
       </div>
 
       {/* Tab bar */}
-      <div className="flex items-center border-b border-white/10 flex-shrink-0 bg-[#0a0a0a]">
+      <div className="flex items-center border-b border-white/10 flex-shrink-0 bg-[#0a0a0a] overflow-x-auto">
         {tabs.map(t => (
           <button
             key={t.key}
@@ -430,8 +421,7 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
           </button>
         ))}
 
-        <div className="ml-auto flex items-center gap-2 pr-3">
-          {/* Console filter pills */}
+        <div className="ml-auto flex items-center gap-2 pr-3 shrink-0">
           {tab === 'console' && (
             <div className="flex items-center gap-1 mr-2">
               {(['all', 'log', 'warn', 'error', 'info'] as const).map(l => (
@@ -451,13 +441,15 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
           )}
           {tab === 'storage' && (
             <button 
-              onClick={() => {
-                if (storeTab === 'opfs') {
-                  loadOpfsDir(currentOpfsHandleRef.current);
-                } else {
-                  readStorage(storeTab);
-                }
-              }} 
+              onClick={() => readStorage(storeTab)} 
+              className="text-[9px] text-white/30 hover:text-white/60 uppercase tracking-widest transition-colors px-2"
+            >
+              Refresh
+            </button>
+          )}
+          {tab === 'opfs' && (
+            <button 
+              onClick={() => loadOpfsDir(currentOpfsHandleRef.current)} 
               className="text-[9px] text-white/30 hover:text-white/60 uppercase tracking-widest transition-colors px-2"
             >
               Refresh
@@ -583,7 +575,7 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
       {tab === 'storage' && (
         <div className="flex flex-col flex-1 overflow-hidden">
           <div className="flex-shrink-0 flex border-b border-white/10">
-            {(['local', 'session', 'cookies', 'opfs'] as StorageTab[]).map(s => (
+            {(['local', 'session', 'cookies'] as StorageTab[]).map(s => (
               <button
                 key={s}
                 onClick={() => setStoreTab(s)}
@@ -591,84 +583,91 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
                   storeTab === s ? 'text-white border-cadmium-red' : 'text-white/30 border-transparent hover:text-white/60'
                 }`}
               >
-                {s === 'local' ? 'localStorage' : s === 'session' ? 'sessionStorage' : s === 'cookies' ? 'Cookies' : 'OPFS'}
+                {s === 'local' ? 'localStorage' : s === 'session' ? 'sessionStorage' : 'Cookies'}
               </button>
             ))}
           </div>
           
-          {storeTab === 'opfs' ? (
-            <div className="flex flex-col flex-1 overflow-hidden">
-              {/* OPFS Breadcrumbs */}
-              <div className="flex items-center gap-2 px-3 py-1.5 border-b border-white/10 bg-white/[0.02] text-[10px]">
-                <button
-                  disabled={opfsStack.length === 0}
-                  onClick={popOpfsDir}
-                  className="p-1 text-white/40 hover:text-white disabled:opacity-30 transition-colors"
-                >
-                  <CornerUpLeft size={10} />
-                </button>
-                <span className="text-white/50">/</span>
-                <span className="text-white/70">root</span>
-                {opfsStack.map((step, i) => (
-                  <React.Fragment key={i}>
-                    <span className="text-white/50">/</span>
-                    <span className="text-white/70">{step.name}</span>
-                  </React.Fragment>
-                ))}
-              </div>
-              
-              {/* OPFS Entries */}
-              <div className="flex-1 overflow-y-auto">
-                {opfsEntries.length === 0 && (
-                  <p className="text-white/20 uppercase tracking-widest text-center py-8 text-[10px]">Empty directory</p>
-                )}
-                {opfsEntries.length > 0 && (
-                  <>
-                    <div className="grid text-[9px] text-white/30 uppercase tracking-widest px-3 py-1.5 border-b border-white/10 bg-[#0a0a0a]"
-                         style={{ gridTemplateColumns: '24px 1fr 80px' }}>
-                      <span></span><span>Name</span><span className="text-right">Size</span>
-                    </div>
-                    {opfsEntries.map((ent, i) => (
-                      <div 
-                        key={i} 
-                        className="grid text-[10px] px-3 py-1.5 border-b border-white/[0.03] hover:bg-white/[0.05] items-center cursor-pointer transition-colors"
-                        style={{ gridTemplateColumns: '24px 1fr 80px' }}
-                        onClick={() => ent.kind === 'directory' ? enterOpfsDir(ent.name, ent.handle) : dumpOpfsFile(ent.handle)}
-                        title={ent.kind === 'file' ? 'Click to read file contents in console' : 'Click to enter folder'}
-                      >
-                        <span className="text-white/40 flex items-center justify-center">
-                          {ent.kind === 'directory' ? <Folder size={12} className="text-blue-400" /> : <File size={12} />}
-                        </span>
-                        <span className={`truncate pr-4 ${ent.kind === 'directory' ? 'text-white/80' : 'text-white/60'}`}>{ent.name}</span>
-                        <span className="text-white/40 text-right">{ent.size !== undefined ? formatBytes(ent.size) : '-'}</span>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="flex-1 overflow-y-auto">
-              {storeData.length === 0 && (
-                <p className="text-white/20 uppercase tracking-widest text-center py-8 text-[10px]">No items</p>
-              )}
-              {storeData.length > 0 && (
-                <>
-                  <div className="grid text-[9px] text-white/30 uppercase tracking-widest px-3 py-1.5 border-b border-white/10 bg-[#0a0a0a]"
+          <div className="flex-1 overflow-y-auto">
+            {storeData.length === 0 && (
+              <p className="text-white/20 uppercase tracking-widest text-center py-8 text-[10px]">No items</p>
+            )}
+            {storeData.length > 0 && (
+              <>
+                <div className="grid text-[9px] text-white/30 uppercase tracking-widest px-3 py-1.5 border-b border-white/10 bg-[#0a0a0a]"
+                  style={{ gridTemplateColumns: '1fr 1fr' }}>
+                  <span>Key</span><span>Value</span>
+                </div>
+                {storeData.map(([k, v], i) => (
+                  <div key={i} className="grid text-[10px] px-3 py-1.5 border-b border-white/[0.03] hover:bg-white/[0.02]"
                     style={{ gridTemplateColumns: '1fr 1fr' }}>
-                    <span>Key</span><span>Value</span>
+                    <span className="text-cadmium-red/80 truncate pr-4" title={k}>{k}</span>
+                    <span className="text-white/50 truncate" title={v}>{v}</span>
                   </div>
-                  {storeData.map(([k, v], i) => (
-                    <div key={i} className="grid text-[10px] px-3 py-1.5 border-b border-white/[0.03] hover:bg-white/[0.02]"
-                      style={{ gridTemplateColumns: '1fr 1fr' }}>
-                      <span className="text-cadmium-red/80 truncate pr-4" title={k}>{k}</span>
-                      <span className="text-white/50 truncate" title={v}>{v}</span>
-                    </div>
-                  ))}
-                </>
-              )}
-            </div>
-          )}
+                ))}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── OPFS BROWSER ────────────────────────────────────────────── */}
+      {tab === 'opfs' && (
+        <div className="flex flex-col flex-1 overflow-hidden">
+          {/* OPFS Breadcrumbs */}
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-white/10 bg-[#0a0a0a] text-[10px]">
+            <button
+              disabled={opfsStack.length === 0}
+              onClick={popOpfsDir}
+              className="p-1 text-white/40 hover:text-white disabled:opacity-30 transition-colors"
+              title="Go up"
+            >
+              <CornerUpLeft size={10} />
+            </button>
+            <span className="text-white/50">/</span>
+            <button 
+              onClick={() => { setOpfsStack([]); loadOpfsDir(); }} 
+              className="text-white/70 hover:text-white transition-colors"
+            >
+              root
+            </button>
+            {opfsStack.map((step, i) => (
+              <React.Fragment key={i}>
+                <span className="text-white/50">/</span>
+                <span className="text-white/70">{step.name}</span>
+              </React.Fragment>
+            ))}
+          </div>
+          
+          {/* OPFS Entries */}
+          <div className="flex-1 overflow-y-auto">
+            {opfsEntries.length === 0 && (
+              <p className="text-white/20 uppercase tracking-widest text-center py-8 text-[10px]">Directory is empty</p>
+            )}
+            {opfsEntries.length > 0 && (
+              <>
+                <div className="grid text-[9px] text-white/30 uppercase tracking-widest px-3 py-1.5 border-b border-white/10 bg-[#0a0a0a]"
+                     style={{ gridTemplateColumns: '24px 1fr 80px' }}>
+                  <span></span><span>Name</span><span className="text-right">Size</span>
+                </div>
+                {opfsEntries.map((ent, i) => (
+                  <div 
+                    key={i} 
+                    className="grid text-[10px] px-3 py-1.5 border-b border-white/[0.03] hover:bg-white/[0.05] items-center cursor-pointer transition-colors"
+                    style={{ gridTemplateColumns: '24px 1fr 80px' }}
+                    onClick={() => ent.kind === 'directory' ? enterOpfsDir(ent.name, ent.handle) : dumpOpfsFile(ent.handle)}
+                    title={ent.kind === 'file' ? 'Click to output file contents to console' : 'Click to open folder'}
+                  >
+                    <span className="text-white/40 flex items-center justify-center">
+                      {ent.kind === 'directory' ? <Folder size={12} className="text-blue-400" /> : <File size={12} />}
+                    </span>
+                    <span className={`truncate pr-4 ${ent.kind === 'directory' ? 'text-white/80' : 'text-white/60'}`}>{ent.name}</span>
+                    <span className="text-white/40 text-right">{ent.size !== undefined ? formatBytes(ent.size) : '-'}</span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
