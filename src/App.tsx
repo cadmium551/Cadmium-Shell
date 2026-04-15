@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, Play, Trash2, X, Gamepad2, Layers, FileCode, FolderOpen, MoreVertical, Settings, Folder } from 'lucide-react';
+import { Upload, Play, Trash2, X, Gamepad2, Layers, FileCode, FolderOpen, MoreVertical, Settings, Folder, Terminal } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import DevTools from './DevTools';
 
 // Constants - use local path for Service Worker interception
 const SANDBOX_BASE = "/vfs";
@@ -29,6 +30,8 @@ export default function App() {
   const [strippingGame, setStrippingGame] = useState<string | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const barTimeoutRef = useRef<number | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [showDevTools, setShowDevTools] = useState(false);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -158,11 +161,21 @@ export default function App() {
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
 
+    // ── DevTools keyboard shortcut: F12 or Ctrl+Shift+I ────────────────────
+    const handleDevToolsShortcut = (e: KeyboardEvent) => {
+      if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && e.key === 'I')) {
+        e.preventDefault();
+        setShowDevTools(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleDevToolsShortcut);
+
     return () => {
       workerRef.current?.terminate();
       window.removeEventListener('message', handleGameMessage);
       window.removeEventListener('click', handleGlobalClick);
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('keydown', handleDevToolsShortcut);
     };
   }, [activeGame]);
 
@@ -243,6 +256,13 @@ export default function App() {
         </div>
         
         <div className="flex flex-wrap items-center justify-center gap-3">
+          <button 
+            onClick={() => setShowDevTools(prev => !prev)}
+            className={`p-3 rounded-full transition-all active:scale-95 ${showDevTools ? 'bg-cadmium-red/20 text-cadmium-red' : 'bg-white/5 hover:bg-white/10 text-white/80 hover:text-white'}`}
+            title="Toggle DevTools (F12)"
+          >
+            <Terminal size={20} />
+          </button>
           <button 
             onClick={() => {
               setShowGlobalSettings(true);
@@ -413,13 +433,27 @@ export default function App() {
                     <div className="w-1.5 h-1.5 bg-cadmium-red rounded-full" />
                     <span className="text-[9px] font-mono uppercase tracking-widest text-white/80">Process Active</span>
                   </div>
-                  <button 
-                    onClick={killGame}
-                    className="flex items-center gap-2 bg-cadmium-red/10 hover:bg-cadmium-red text-cadmium-red hover:text-white px-3 py-1 rounded-full text-[9px] font-bold transition-all uppercase tracking-wider border border-cadmium-red/20"
-                  >
-                    <X size={12} />
-                    Kill Process
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowDevTools(prev => !prev)}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-bold transition-all uppercase tracking-wider border ${
+                        showDevTools
+                          ? 'bg-cadmium-red/20 text-cadmium-red border-cadmium-red/40'
+                          : 'bg-white/5 hover:bg-white/10 text-white/50 hover:text-white border-white/10'
+                      }`}
+                      title="Toggle DevTools (F12)"
+                    >
+                      <Terminal size={11} />
+                      DevTools
+                    </button>
+                      <button 
+                      onClick={killGame}
+                      className="flex items-center gap-2 bg-cadmium-red/10 hover:bg-cadmium-red text-cadmium-red hover:text-white px-3 py-1 rounded-full text-[9px] font-bold transition-all uppercase tracking-wider border border-cadmium-red/20"
+                    >
+                      <X size={12} />
+                      Kill Process
+                    </button>
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -431,6 +465,7 @@ export default function App() {
                 </div>
               ) : (
                 <iframe
+                  ref={iframeRef}
                   src={`${SANDBOX_BASE}/${activeGame}/index.html`}
                   className="w-full h-full border-none bg-black"
                   sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-forms"
@@ -444,6 +479,15 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* DevTools Panel */}
+      {showDevTools && (
+        <DevTools
+          iframeRef={iframeRef}
+          activeGame={activeGame}
+          onClose={() => setShowDevTools(false)}
+        />
+      )}
 
       {/* Footer Info */}
       <footer className="p-8 border-t border-white/5 mt-auto">
