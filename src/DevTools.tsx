@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, RefObject } from 'react';
-import { X, Terminal, Radio, Wifi, Database, Trash2, Folder, File, CornerUpLeft, HardDrive } from 'lucide-react';
+import { X, Terminal, Radio, Wifi, Database, Trash2, Folder, File, CornerUpLeft, HardDrive, ArrowUp } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,7 +94,7 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
   const [filter, setFilter] = useState('');
   const [levelFilter, setLevelFilter] = useState<LogLevel | 'all'>('all');
   const [consoleInput, setConsoleInput] = useState('');
-  const [height, setHeight] = useState(280);
+  const [height, setHeight] = useState(320);
   const [dragging, setDragging] = useState(false);
   const dragStartY = useRef(0);
   const dragStartH = useRef(0);
@@ -280,7 +280,7 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
       addLog('info', 'shell', [`[OPFS] Content of "${file.name}" (${formatBytes(file.size)}):`, text]);
       setTab('console');
     } catch (err) {
-      addLog('error', 'shell', ['OPFS Read File Error: ' + String(err)]);
+      addLog('error', 'shell', ['OPFS Read File Error (File might be binary): ' + String(err)]);
     }
   };
 
@@ -382,22 +382,20 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
     { key: 'messages', label: 'Messages', icon: <Radio size={13} />, count: msgs.length || undefined },
     { key: 'network', label: 'Network', icon: <Wifi size={13} />, count: nets.length || undefined },
     { key: 'storage', label: 'Storage', icon: <Database size={13} /> },
-    { key: 'opfs', label: 'OPFS', icon: <HardDrive size={13} /> },
+    { key: 'opfs', label: 'Files', icon: <HardDrive size={13} /> },
   ];
 
   return (
     <div
-      className="fixed bottom-0 left-0 right-0 z-[95] flex flex-col bg-[#060606] border-t border-white/10 shadow-2xl font-mono"
+      className="fixed bottom-0 left-0 right-0 z-[95] flex flex-col bg-[#060606] border-t border-white/10 shadow-2xl font-mono text-white"
       style={{ height }}
     >
       {/* Drag handle */}
       <div
         onMouseDown={onDragStart}
-        className="h-[5px] cursor-ns-resize flex-shrink-0 flex items-center justify-center group"
+        className="h-[5px] cursor-ns-resize flex-shrink-0 flex items-center justify-center group bg-white/5 hover:bg-cadmium-red/50 transition-colors"
         title="Drag to resize"
-      >
-        <div className="w-12 h-[3px] rounded-full bg-white/10 group-hover:bg-cadmium-red/50 transition-colors" />
-      </div>
+      />
 
       {/* Tab bar */}
       <div className="flex items-center border-b border-white/10 flex-shrink-0 bg-[#0a0a0a] overflow-x-auto">
@@ -614,59 +612,75 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
       {/* ─── OPFS BROWSER ────────────────────────────────────────────── */}
       {tab === 'opfs' && (
         <div className="flex flex-col flex-1 overflow-hidden">
-          {/* OPFS Breadcrumbs */}
+          {/* Breadcrumbs */}
           <div className="flex items-center gap-2 px-3 py-1.5 border-b border-white/10 bg-[#0a0a0a] text-[10px]">
-            <button
-              disabled={opfsStack.length === 0}
-              onClick={popOpfsDir}
-              className="p-1 text-white/40 hover:text-white disabled:opacity-30 transition-colors"
-              title="Go up"
-            >
-              <CornerUpLeft size={10} />
-            </button>
-            <span className="text-white/50">/</span>
+            <span className="text-white/40">Path:</span>
             <button 
               onClick={() => { setOpfsStack([]); loadOpfsDir(); }} 
-              className="text-white/70 hover:text-white transition-colors"
+              className="text-cadmium-red hover:underline transition-all"
             >
-              root
+              /root
             </button>
             {opfsStack.map((step, i) => (
               <React.Fragment key={i}>
                 <span className="text-white/50">/</span>
-                <span className="text-white/70">{step.name}</span>
+                <span className="text-white/80">{step.name}</span>
               </React.Fragment>
             ))}
           </div>
           
-          {/* OPFS Entries */}
+          {/* Table view */}
           <div className="flex-1 overflow-y-auto">
-            {opfsEntries.length === 0 && (
-              <p className="text-white/20 uppercase tracking-widest text-center py-8 text-[10px]">Directory is empty</p>
-            )}
-            {opfsEntries.length > 0 && (
-              <>
-                <div className="grid text-[9px] text-white/30 uppercase tracking-widest px-3 py-1.5 border-b border-white/10 bg-[#0a0a0a]"
-                     style={{ gridTemplateColumns: '24px 1fr 80px' }}>
-                  <span></span><span>Name</span><span className="text-right">Size</span>
-                </div>
-                {opfsEntries.map((ent, i) => (
-                  <div 
-                    key={i} 
-                    className="grid text-[10px] px-3 py-1.5 border-b border-white/[0.03] hover:bg-white/[0.05] items-center cursor-pointer transition-colors"
-                    style={{ gridTemplateColumns: '24px 1fr 80px' }}
-                    onClick={() => ent.kind === 'directory' ? enterOpfsDir(ent.name, ent.handle) : dumpOpfsFile(ent.handle)}
-                    title={ent.kind === 'file' ? 'Click to output file contents to console' : 'Click to open folder'}
+            <table className="w-full text-[11px] text-left border-collapse">
+              <thead className="sticky top-0 bg-[#0a0a0a] text-white/30 uppercase text-[9px]">
+                <tr>
+                  <th className="px-3 py-2 font-normal">Name</th>
+                  <th className="px-3 py-2 font-normal text-right">Size</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* UP ONE LEVEL OPTION */}
+                {opfsStack.length > 0 && (
+                  <tr 
+                    onClick={popOpfsDir}
+                    className="hover:bg-white/5 cursor-pointer border-b border-white/[0.03] text-cadmium-red/80 transition-colors"
                   >
-                    <span className="text-white/40 flex items-center justify-center">
-                      {ent.kind === 'directory' ? <Folder size={12} className="text-blue-400" /> : <File size={12} />}
-                    </span>
-                    <span className={`truncate pr-4 ${ent.kind === 'directory' ? 'text-white/80' : 'text-white/60'}`}>{ent.name}</span>
-                    <span className="text-white/40 text-right">{ent.size !== undefined ? formatBytes(ent.size) : '-'}</span>
-                  </div>
+                    <td className="px-3 py-1.5 flex items-center gap-2 italic">
+                      <ArrowUp size={12} /> ../ [Parent Directory]
+                    </td>
+                    <td className="px-3 py-1.5 text-right">-</td>
+                  </tr>
+                )}
+
+                {/* FILE/FOLDER LIST */}
+                {opfsEntries.length === 0 && opfsStack.length === 0 && (
+                  <tr>
+                    <td colSpan={2}>
+                      <p className="text-white/20 uppercase tracking-widest text-center py-8 text-[10px]">Directory is empty</p>
+                    </td>
+                  </tr>
+                )}
+
+                {opfsEntries.map((ent, i) => (
+                  <tr 
+                    key={i} 
+                    onClick={() => ent.kind === 'directory' ? enterOpfsDir(ent.name, ent.handle) : dumpOpfsFile(ent.handle)}
+                    className="hover:bg-white/10 cursor-pointer border-b border-white/[0.03] group transition-colors"
+                    title={ent.kind === 'file' ? 'Click to dump contents to console' : 'Click to enter folder'}
+                  >
+                    <td className="px-3 py-1.5 flex items-center gap-2">
+                      {ent.kind === 'directory' ? <Folder size={13} className="text-blue-400" /> : <File size={13} className="opacity-40 text-white" />}
+                      <span className={ent.kind === 'directory' ? "text-white/90" : "text-white/60"}>
+                        {ent.name}{ent.kind === 'directory' && '/'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-1.5 text-right opacity-40 tabular-nums">
+                      {ent.kind === 'file' ? (ent.size !== undefined ? formatBytes(ent.size) : '0 B') : '--'}
+                    </td>
+                  </tr>
                 ))}
-              </>
-            )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
