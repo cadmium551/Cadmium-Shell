@@ -32,6 +32,7 @@ export default function App() {
   const barTimeoutRef = useRef<number | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [showDevTools, setShowDevTools] = useState(false);
+  const [gameBlobUrl, setGameBlobUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -129,6 +130,12 @@ export default function App() {
       } else if (type === 'STRIP_SUCCESS') {
         console.log(`[Cadmium] Strip successful for ${e.data.gameId}. Saved ${e.data.savings} bytes.`);
         setStrippingGame(null);
+      } else if (type === 'READ_FILE_SUCCESS') {
+        console.log(`[Cadmium] File read success for ${gameId}: ${e.data.filePath}`);
+        const blob = new Blob([e.data.data], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        setGameBlobUrl(url);
+        setActiveGame(gameId);
       } else if (type === 'ERROR') {
         console.error(`[Cadmium] Worker Error for ${gameId || 'unknown'}:`, error);
       }
@@ -219,10 +226,18 @@ export default function App() {
       alert("Cadmium Engine is still initializing. Please wait a moment.");
       return;
     }
-    setActiveGame(id);
+    console.log(`[Cadmium] Reading game file for blob: launch: ${id}`);
+    workerRef.current?.postMessage({
+      type: 'READ_FILE',
+      payload: { gameId: id, filePath: 'www/index.html' }
+    });
   };
 
   const killGame = () => {
+    if (gameBlobUrl) {
+      URL.revokeObjectURL(gameBlobUrl);
+      setGameBlobUrl(null);
+    }
     setActiveGame(null);
   };
 
@@ -458,15 +473,15 @@ export default function App() {
               )}
             </AnimatePresence>
             <div className="flex-1 relative bg-cadmium-dark">
-              {!swReady ? (
+              {!gameBlobUrl ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
                   <div className="w-12 h-12 border-4 border-cadmium-red border-t-transparent rounded-full animate-spin" />
-                  <p className="text-cadmium-red font-mono text-sm animate-pulse">SYNCHRONIZING VFS...</p>
+                  <p className="text-cadmium-red font-mono text-sm animate-pulse">LOADING FROM OPFS...</p>
                 </div>
               ) : (
                 <iframe
                   ref={iframeRef}
-                  src={`${SANDBOX_BASE}/${activeGame}/index.html`}
+                  src={gameBlobUrl ?? undefined}
                   className="w-full h-full border-none bg-black"
                   sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-forms"
                   // Performance and capability hints
