@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, Play, Trash2, X, Gamepad2, Layers, FileCode, FolderOpen, MoreVertical, Settings, Folder } from 'lucide-react';
+import { Upload, Play, Trash2, X, Gamepad2, Layers, FileCode, FolderOpen, MoreVertical, Settings, Folder, Terminal } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import DevTools from './DevTools';
 
+// Constants - use local path for Service Worker interception
+const SANDBOX_BASE = "/vfs";
 const APP_VERSION = "1.4.0";
 
 interface Game {
@@ -23,13 +26,39 @@ export default function App() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [showOverlayBar, setShowOverlayBar] = useState(true);
   const [strippingGame, setStrippingGame] = useState<string | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const barTimeoutRef = useRef<number | null>(null);
-  const popupRef = useRef<Window | null>(null);
-  const popupPollRef = useRef<number | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [showDevTools, setShowDevTools] = useState(false);
-  const [gameBlobUrl, setGameBlobUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const threshold = window.innerHeight - 5;
+      if (e.clientY >= threshold) {
+        setShowOverlayBar(true);
+        if (barTimeoutRef.current) window.clearTimeout(barTimeoutRef.current);
+        barTimeoutRef.current = window.setTimeout(() => {
+          setShowOverlayBar(false);
+        }, 3000);
+      }
+    };
+
+    if (activeGame) {
+      window.addEventListener('mousemove', handleMouseMove);
+      setShowOverlayBar(true);
+      if (barTimeoutRef.current) window.clearTimeout(barTimeoutRef.current);
+      barTimeoutRef.current = window.setTimeout(() => setShowOverlayBar(false), 3000);
+    } else {
+      window.removeEventListener('mousemove', handleMouseMove);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      if (barTimeoutRef.current) window.clearTimeout(barTimeoutRef.current);
+    };
+  }, [activeGame]);
 
   useEffect(() => {
     console.log(`[Cadmium] Initializing Shell v${APP_VERSION}`);
@@ -92,40 +121,14 @@ export default function App() {
         console.log(`[Cadmium] Game data saved successfully for ${gameId}`);
       } else if (type === 'LOAD_SUCCESS') {
         console.log(`[Cadmium] Game data loaded for ${gameId}`);
-        popupRef.current?.postMessage({ type: 'LOAD_RESPONSE', data }, '*');
+        const iframe = document.querySelector('iframe');
+        iframe?.contentWindow?.postMessage({ type: 'LOAD_RESPONSE', data }, '*');
       } else if (type === 'RENAME_SUCCESS') {
         console.log(`[Cadmium] Game renamed: ${e.data.oldId} -> ${e.data.newId}`);
         refreshGames();
       } else if (type === 'STRIP_SUCCESS') {
         console.log(`[Cadmium] Strip successful for ${e.data.gameId}. Saved ${e.data.savings} bytes.`);
         setStrippingGame(null);
-      } else if (type === 'READ_FILE_SUCCESS') {
-        console.log(`[Cadmium] File read success for ${gameId}: ${e.data.filePath}`);
-        const blob = new Blob([e.data.data], { type: 'text/html' });
-        const url = URL.createObjectURL(blob);
-        const popup = window.open(url, '_blank', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes,resizable=yes');
-        // Sever opener reference so popup is unconnected from this page
-        if (popup) {
-          try { popup.opener = null; } catch (_) {}
-          popupRef.current = popup;
-          setGameBlobUrl(url);
-          setActiveGame(gameId);
-          // Poll for popup being closed by the user
-          if (popupPollRef.current) window.clearInterval(popupPollRef.current);
-          popupPollRef.current = window.setInterval(() => {
-            if (popupRef.current?.closed) {
-              if (popupPollRef.current) window.clearInterval(popupPollRef.current);
-              URL.revokeObjectURL(url);
-              setGameBlobUrl(null);
-              setActiveGame(null);
-              popupRef.current = null;
-            }
-          }, 500);
-        } else {
-          // Popup was blocked — fall back gracefully
-          URL.revokeObjectURL(url);
-          alert('Popup blocked! Please allow popups for this site and try again.');
-        }
       } else if (type === 'ERROR') {
         console.error(`[Cadmium] Worker Error for ${gameId || 'unknown'}:`, error);
       }
@@ -216,21 +219,10 @@ export default function App() {
       alert("Cadmium Engine is still initializing. Please wait a moment.");
       return;
     }
-    console.log(`[Cadmium] Reading game file for blob: launch: ${id}`);
-    workerRef.current?.postMessage({
-      type: 'READ_FILE',
-      payload: { gameId: id, filePath: 'www/index.html' }
-    });
+    setActiveGame(id);
   };
 
   const killGame = () => {
-    if (popupPollRef.current) window.clearInterval(popupPollRef.current);
-    if (popupRef.current && !popupRef.current.closed) popupRef.current.close();
-    popupRef.current = null;
-    if (gameBlobUrl) {
-      URL.revokeObjectURL(gameBlobUrl);
-      setGameBlobUrl(null);
-    }
     setActiveGame(null);
   };
 
@@ -411,36 +403,91 @@ export default function App() {
         </div>
       </main>
 
-      {/* Popup Status Pill */}
+      {/* Sandbox Overlay */}
       <AnimatePresence>
         {activeGame && (
-          <motion.div
-            initial={{ y: 80, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 80, opacity: 0 }}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 bg-cadmium-dark/95 backdrop-blur-md border border-white/10 rounded-full px-5 py-3 shadow-2xl"
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-cadmium-dark flex flex-col"
           >
-            <div className="w-2 h-2 bg-cadmium-red rounded-full animate-pulse" />
-            <span className="text-[10px] font-mono uppercase tracking-widest text-white/80 max-w-[200px] truncate">
-              {activeGame}
-            </span>
-            <div className="w-px h-4 bg-white/10" />
-            <button
-              onClick={() => popupRef.current?.focus()}
-              className="text-[9px] font-bold uppercase tracking-wider text-white/50 hover:text-white transition-colors"
-            >
-              Focus
-            </button>
-            <button
-              onClick={killGame}
-              className="flex items-center gap-1.5 bg-cadmium-red/10 hover:bg-cadmium-red text-cadmium-red hover:text-white px-3 py-1 rounded-full text-[9px] font-bold transition-all uppercase tracking-wider border border-cadmium-red/20"
-            >
-              <X size={11} />
-              Quit
-            </button>
+            {/* Hitbox for status bar - Always on top */}
+            <div 
+              className="fixed bottom-0 left-0 right-0 h-[5px] z-[100] cursor-pointer"
+              onMouseMove={() => {
+                setShowOverlayBar(true);
+                if (barTimeoutRef.current) window.clearTimeout(barTimeoutRef.current);
+                barTimeoutRef.current = window.setTimeout(() => setShowOverlayBar(false), 3000);
+              }}
+            />
+            <AnimatePresence>
+              {showOverlayBar && (
+                <motion.div 
+                  initial={{ y: 50, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: 50, opacity: 0 }}
+                  className="absolute bottom-0 left-0 right-0 h-10 bg-cadmium-dark/90 backdrop-blur-md border-t border-white/10 flex items-center justify-between px-4 z-[90]"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-1.5 h-1.5 bg-cadmium-red rounded-full" />
+                    <span className="text-[9px] font-mono uppercase tracking-widest text-white/80">Process Active</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowDevTools(prev => !prev)}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-bold transition-all uppercase tracking-wider border ${
+                        showDevTools
+                          ? 'bg-cadmium-red/20 text-cadmium-red border-cadmium-red/40'
+                          : 'bg-white/5 hover:bg-white/10 text-white/50 hover:text-white border-white/10'
+                      }`}
+                      title="Toggle DevTools (F12)"
+                    >
+                      <Terminal size={11} />
+                      DevTools
+                    </button>
+                      <button 
+                      onClick={killGame}
+                      className="flex items-center gap-2 bg-cadmium-red/10 hover:bg-cadmium-red text-cadmium-red hover:text-white px-3 py-1 rounded-full text-[9px] font-bold transition-all uppercase tracking-wider border border-cadmium-red/20"
+                    >
+                      <X size={12} />
+                      Quit
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <div className="flex-1 relative bg-cadmium-dark">
+              {!swReady ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
+                  <div className="w-12 h-12 border-4 border-cadmium-red border-t-transparent rounded-full animate-spin" />
+                  <p className="text-cadmium-red font-mono text-sm animate-pulse">SYNCHRONIZING VFS...</p>
+                </div>
+              ) : (
+                <iframe
+                  ref={iframeRef}
+                  src={`${SANDBOX_BASE}/${activeGame}/index.html`}
+                  className="w-full h-full border-none bg-black"
+                  sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-forms"
+                  // Performance and capability hints
+                  allow="autoplay; fullscreen; gamepad; microphone; camera; midi; encrypted-media; xr-spatial-tracking; clipboard-read; clipboard-write; cross-origin-isolated"
+                  loading="eager"
+                  title="Game Sandbox"
+                />
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* DevTools Panel */}
+      {showDevTools && (
+        <DevTools
+          iframeRef={iframeRef}
+          activeGame={activeGame}
+          onClose={() => setShowDevTools(false)}
+        />
+      )}
 
       {/* Footer Info */}
       <footer className="p-8 border-t border-white/5 mt-auto">
