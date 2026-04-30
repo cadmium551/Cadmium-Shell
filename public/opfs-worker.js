@@ -188,6 +188,26 @@ self.onmessage = async (e) => {
         break;
       }
 
+      case "READ_FILE": {
+        const { gameId, filePath } = payload;
+        try {
+          const cadmiumGamesDir = await root.getDirectoryHandle("cadmium_games");
+          const gameDir = await cadmiumGamesDir.getDirectoryHandle(gameId);
+          const pathParts = filePath.split("/");
+          let currentDir = gameDir;
+          for (let i = 0; i < pathParts.length - 1; i++) {
+            currentDir = await currentDir.getDirectoryHandle(pathParts[i]);
+          }
+          const fileHandle = await currentDir.getFileHandle(pathParts[pathParts.length - 1]);
+          const file = await fileHandle.getFile();
+          const arrayBuffer = await file.arrayBuffer();
+          self.postMessage({ type: "READ_FILE_SUCCESS", gameId, filePath, data: arrayBuffer }, [arrayBuffer]);
+        } catch (e) {
+          self.postMessage({ type: "ERROR", error: `Failed to read file: ${e.message}`, gameId });
+        }
+        break;
+      }
+
       case "LIST_FILES": {
         const { gameId } = payload;
         const files = [];
