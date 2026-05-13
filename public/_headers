@@ -1,5 +1,6 @@
 /*
-  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Embedder-Policy: credentialless
   Cross-Origin-Opener-Policy: same-origin
+  sharedArrayBuffer: true
   X-Content-Type-Options: nosniff
   Access-Control-Allow-Origin: *
