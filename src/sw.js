@@ -41,6 +41,25 @@ self.addEventListener("message", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+    // ── WASM MIME type fix ──────────────────────────────────────────────────
+  // Unity WebGL serves .wasm from CDN without application/wasm content-type.
+  // Without it the browser can't stream-compile and tries a 800MB+ ArrayBuffer
+  // which crashes. We intercept and rewrite the response headers.
+  if (event.request.url.endsWith('.wasm') || event.request.url.includes('.wasm?')) {
+    event.respondWith(
+      fetch(event.request).then(response => {
+        // Clone the response and override Content-Type
+        const headers = new Headers(response.headers);
+        headers.set('Content-Type', 'application/wasm');
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers,
+        });
+      })
+    );
+    return;
+  }
   const url = new URL(event.request.url);
 
   // Intercept requests to our local virtual file system path
