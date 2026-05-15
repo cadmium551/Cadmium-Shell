@@ -16,30 +16,6 @@ const CACHE_NAME = "cadmium-shell-v9";
 const SW_BASE = self.location.pathname.substring(0, self.location.pathname.lastIndexOf('/') + 1);
 const SANDBOX_PATH = SW_BASE + "vfs/";
 
-self.addEventListener("install", (event) => {
-  self.skipWaiting();
-});
-
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    Promise.all([
-      self.clients.claim(),
-      // Clear old caches
-      caches.keys().then((keys) => {
-        return Promise.all(
-          keys.filter((key) => key !== CACHE_NAME && !key.includes('workbox')).map((key) => caches.delete(key))
-        );
-      }),
-    ])
-  );
-});
-
-self.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "SKIP_WAITING") {
-    self.skipWaiting();
-  }
-});
-
 self.addEventListener("fetch", (event) => {
     // ── WASM MIME type fix ──────────────────────────────────────────────────
   // Unity WebGL serves .wasm from CDN without application/wasm content-type.
@@ -86,6 +62,32 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 });
+
+self.addEventListener("install", (event) => {
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    Promise.all([
+      self.clients.claim(),
+      // Clear old caches
+      caches.keys().then((keys) => {
+        return Promise.all(
+          keys.filter((key) => key !== CACHE_NAME && !key.includes('workbox')).map((key) => caches.delete(key))
+        );
+      }),
+    ])
+  );
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
+
+
 
 // Network-first strategy for the shell itself (for anything not precached)
 registerRoute(
