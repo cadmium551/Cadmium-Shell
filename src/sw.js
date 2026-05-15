@@ -62,6 +62,24 @@ self.addEventListener("fetch", (event) => {
   }
   const url = new URL(event.request.url);
 
+    // Inject COOP/COEP on the main document and game iframes
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).then(response => {
+        const headers = new Headers(response.headers);
+        headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+        headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
+        headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers
+        });
+      })
+    );
+    return;
+  }
+  
   // Intercept requests to our local virtual file system path
   if (url.pathname.startsWith(SANDBOX_PATH)) {
     event.respondWith(handleGameAssetRequest(url, event.request));
