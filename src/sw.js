@@ -7,7 +7,7 @@ import { NetworkFirst } from 'workbox-strategies';
  * Serves game assets directly from the Origin Private File System (OPFS).
  */
 
-const CACHE_NAME = "cadmium-shell-v10";
+const CACHE_NAME = "cadmium-shell-v11";
 const SW_BASE = self.location.pathname.substring(0, self.location.pathname.lastIndexOf('/') + 1);
 const SANDBOX_PATH = SW_BASE + "vfs/";
 
@@ -15,14 +15,12 @@ const SANDBOX_PATH = SW_BASE + "vfs/";
 // CRITICAL: Must be registered BEFORE precacheAndRoute() is called below.
 // Workbox registers its own fetch handler inside precacheAndRoute(), which
 // intercepts navigate requests first and serves cached HTML without headers.
-// Our handler must run first to inject COOP/COEP on the document response.
-// SharedArrayBuffer (required by Unity WebGL threading) only works when
-// crossOriginIsolated=true, which requires these headers on the main document.
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // 1. COOP/COEP on all navigate requests (shell + game iframes)
-  if (event.request.mode === 'navigate') {
+  // 1. COOP/COEP on navigate requests — skip VFS paths, those need the VFS handler
+  //    VFS index.html gets COOP/COEP added inside handleGameAssetRequest instead.
+  if (event.request.mode === 'navigate' && !url.pathname.startsWith(SANDBOX_PATH)) {
     event.respondWith(
       fetch(event.request).then(response => {
         const headers = new Headers(response.headers);
@@ -40,7 +38,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   // 2. WASM MIME type fix — CDN serves .wasm without application/wasm type
-  // causing fallback to ArrayBuffer instantiation which crashes at 800MB+
+  //    causing fallback to ArrayBuffer instantiation which crashes at 800MB+
   if (event.request.url.endsWith('.wasm') || event.request.url.includes('.wasm?')) {
     event.respondWith(
       fetch(event.request).then(response => {
@@ -57,7 +55,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // 3. VFS game asset requests
+  // 3. VFS game asset requests (including navigate to game iframe index.html)
   if (url.pathname.startsWith(SANDBOX_PATH)) {
     event.respondWith(handleGameAssetRequest(url, event.request));
     return;
@@ -99,7 +97,7 @@ registerRoute(
 async function handleGameAssetRequest(url, request) {
   try {
     if (request.headers.get('Service-Worker') === 'script' || url.pathname.endsWith('sw.js') || url.pathname.endsWith('ServiceWorker.js')) {
-      return new Response("Game Service Workers are disabled in Cadmium", { 
+      return new Response("Game Service Workers are disabled in Cadmium", {
         status: 404,
         headers: { "Content-Type": "text/plain" }
       });
@@ -160,7 +158,7 @@ async function handleGameAssetRequest(url, request) {
         if (retryCount < maxRetries) {
           await new Promise(r => setTimeout(r, 200 * retryCount));
         } else {
-          return new Response(`Game directory not found: "${gameId}". Available: [${available.join(", ")}]`, { 
+          return new Response(`Game directory not found: "${gameId}". Available: [${available.join(", ")}]`, {
             status: 404, headers: { "Content-Type": "text/plain" }
           });
         }
@@ -204,10 +202,17 @@ async function handleGameAssetRequest(url, request) {
       contentType = mimeMap[ext] || 'application/octet-stream';
     }
 
+    // Add COOP/COEP to index.html so the game iframe is cross-origin isolated.
+    // This is required for SharedArrayBuffer / Unity threading to work.
+    const isIndexHtml = filePath === 'index.html' || filePath.endsWith('/index.html');
     const CORS_HEADERS = {
       "Access-Control-Allow-Origin": "*",
       "Cross-Origin-Resource-Policy": "cross-origin",
-      "Cache-Control": "public, max-age=3600"
+      "Cache-Control": "public, max-age=3600",
+      ...(isIndexHtml ? {
+        "Cross-Origin-Opener-Policy": "same-origin",
+        "Cross-Origin-Embedder-Policy": "require-corp"
+      } : {})
     };
 
     const rangeHeader = request.headers.get('Range');
@@ -230,10 +235,14 @@ async function handleGameAssetRequest(url, request) {
     }
 
     return new Response(file, {
-      headers: { "Content-Type": contentType, "Accept-Ranges": "bytes", ...CORS_HEADERS }
+      headers: {
+        "Content-Type": contentType,
+        "Accept-Ranges": "bytes",
+        ...CORS_HEADERS
+      }
     });
   } catch (error) {
-    return new Response(`Asset not found in VFS: ${url.pathname}`, { 
+    return new Response(`Asset not found in VFS: ${url.pathname}`, {
       status: 404, headers: { "Content-Type": "text/plain" }
     });
   }
