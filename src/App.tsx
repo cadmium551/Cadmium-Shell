@@ -17,6 +17,8 @@ export default function App() {
   const [activeGame, setActiveGame] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [swReady, setSwReady] = useState(false);
+  const [storagePersisted, setStoragePersisted] = useState<boolean | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean>(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [browsingGame, setBrowsingGame] = useState<string | null>(null);
   const [gameFiles, setGameFiles] = useState<string[]>([]);
@@ -62,7 +64,21 @@ export default function App() {
 
   useEffect(() => {
     console.log(`[Cadmium] Initializing Shell v${APP_VERSION}`);
-    
+
+    // Request persistent storage so the browser won't silently evict OPFS-stored
+    // games under storage pressure. Without this, "fully offline" is only as
+    // durable as the browser's best-effort storage eviction policy allows.
+    if (navigator.storage?.persist) {
+      navigator.storage.persist()
+        .then((granted) => {
+          console.log(`[Cadmium] Persistent storage ${granted ? 'granted' : 'not granted'}`);
+          setStoragePersisted(granted);
+        })
+        .catch(() => setStoragePersisted(false));
+    } else {
+      setStoragePersisted(false);
+    }
+
     // Register Service Worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js')
@@ -170,12 +186,22 @@ export default function App() {
     };
     window.addEventListener('keydown', handleDevToolsShortcut);
 
+    // Track connectivity purely for the "Offline Ready" status pill — the
+    // shell and any imported games already run entirely from cache/OPFS
+    // regardless of this value.
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
     return () => {
       workerRef.current?.terminate();
       window.removeEventListener('message', handleGameMessage);
       window.removeEventListener('click', handleGlobalClick);
       window.removeEventListener('beforeunload', handleBeforeUnload);
       window.removeEventListener('keydown', handleDevToolsShortcut);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
     };
   }, [activeGame]);
 
@@ -251,6 +277,21 @@ export default function App() {
             <h1 className="text-xl font-bold tracking-tight uppercase italic flex items-center gap-2">
               Cadmium Shell
               <span className="text-[10px] not-italic font-mono bg-white/10 px-1.5 py-0.5 rounded text-white/70">v{APP_VERSION}</span>
+              <span
+                className={`text-[9px] not-italic font-mono px-2 py-0.5 rounded-full border flex items-center gap-1.5 normal-case tracking-normal ${
+                  swReady
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                    : 'bg-white/5 text-white/40 border-white/10'
+                }`}
+                title={
+                  storagePersisted
+                    ? 'Shell is fully cached on-device and storage is persisted — imported games will not be auto-evicted.'
+                    : 'Shell is fully cached on-device. Storage persistence was not granted by the browser, so imported games could be evicted under storage pressure.'
+                }
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${swReady ? 'bg-emerald-400' : 'bg-white/30 animate-pulse'}`} />
+                {swReady ? (isOnline ? 'Offline Ready' : 'Offline · Running Locally') : 'Caching Shell…'}
+              </span>
             </h1>
           </div>
         </div>
