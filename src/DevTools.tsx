@@ -202,6 +202,11 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
   }, [addLog, iframeRef]);
 
   // ─── Network interception ─────────────────────────────────────────────────
+  // Covers window.fetch() and XHR from the shell's own scope. This CANNOT see
+  // the game iframe's navigation load or its own internal requests — those
+  // are covered separately below, via the Service Worker broadcast and the
+  // iframe's load event, since nothing in the parent page's JS is ever in
+  // the path for a cross-document navigation.
 
   useEffect(() => {
     const origFetch = window.fetch;
@@ -228,8 +233,94 @@ export default function DevTools({ iframeRef, activeGame, onClose }: DevToolsPro
         });
     };
 
-    return () => { window.fetch = origFetch; };
+    const OrigXHR = window.XMLHttpRequest;
+    class PatchedXHR extends OrigXHR {
+      private _cdvtEntryId?: number;
+      private _cdvtMethod = 'GET';
+      private _cdvtUrl = '';
+      private _cdvtStart = 0;
+
+      open(method: string, url: string | URL, ...rest: unknown[]) {
+        this._cdvtMethod = method;
+        this._cdvtUrl = typeof url === 'string' ? url : url.href;
+        // @ts-expect-error - forwarding variadic XHR.open args
+        return super.open(method, url, ...rest);
+      }
+      send(...args: unknown[]) {
+        this._cdvtStart = Date.now();
+        const id = uid();
+        this._cdvtEntryId = id;
+        setNets(prev => [...prev.slice(-99), {
+          id, method: this._cdvtMethod, url: this._cdvtUrl, status: '…', type: 'xhr', size: '-', dur: '-', time: ts(),
+        }]);
+        this.addEventListener('loadend', () => {
+          const len = this.getResponseHeader('content-length');
+          setNets(prev => prev.map(n => n.id === id
+            ? {
+                ...n,
+                status: this.status || 'ERR',
+                size: len ? formatBytes(+len) : '-',
+                dur: (Date.now() - this._cdvtStart) + 'ms',
+              }
+            : n));
+        });
+        // @ts-expect-error - forwarding variadic XHR.send args
+        return super.send(...args);
+      }
+    }
+    window.XMLHttpRequest = PatchedXHR as unknown as typeof XMLHttpRequest;
+
+    return () => {
+      window.fetch = origFetch;
+      window.XMLHttpRequest = OrigXHR;
+    };
   }, []);
+
+  // ─── Service Worker network relay (catches iframe navigations) ───────────
+  // The SW broadcasts every /vfs/ request it actually handles. If a game
+  // launch never produces an entry here, the request never reached the SW
+  // at all — that's the key signal for diagnosing a connection-level failure
+  // rather than an in-app 404/error response (which WOULD show up here).
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const handler = (event: MessageEvent) => {
+      const d = event.data;
+      if (!d?.__cdvtNet) return;
+      setNets(prev => [...prev.slice(-99), {
+        id: uid(),
+        method: d.method,
+        url: d.url,
+        status: d.status,
+        type: d.error ? `sw:${d.navigation ? 'nav' : 'sub'} err` : `sw:${d.navigation ? 'nav' : 'sub'}`,
+        size: '-',
+        dur: `${d.dur}ms`,
+        time: ts(),
+      }]);
+      if (d.error) addLog('error', 'shell', [`[SW] ${d.method} ${d.url} failed: ${d.error}`]);
+    };
+    navigator.serviceWorker.addEventListener('message', handler);
+    return () => navigator.serviceWorker.removeEventListener('message', handler);
+  }, [addLog]);
+
+  // ─── Iframe navigation tracking ───────────────────────────────────────────
+  // A completed `load` event on the iframe fires even when it landed on the
+  // browser's own network-error page — the parent generally can't read that
+  // page's contents (cross-origin-ish security boundary), but the timing
+  // alone is useful: compare it against whether a matching sw:nav entry
+  // above ever appeared for the same URL.
+
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    const onLoad = () => {
+      setNets(prev => [...prev.slice(-99), {
+        id: uid(), method: 'GET', url: iframe.src, status: '(navigated)', type: 'iframe-load', size: '-', dur: '-', time: ts(),
+      }]);
+    };
+    iframe.addEventListener('load', onLoad);
+    return () => iframe.removeEventListener('load', onLoad);
+  }, [iframeRef, activeGame]);
 
   // ─── OPFS Reader ──────────────────────────────────────────────────────────
 
