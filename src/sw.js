@@ -56,12 +56,53 @@ self.addEventListener("message", (event) => {
   }
 });
 
+// Broadcasts every VFS request this SW handles to all open shell windows, so
+// the in-app DevTools Network tab can see it. This exists specifically
+// because iframe navigations (e.g. launching a game) never pass through
+// window.fetch() and can't be caught by patching it from the page — the SW's
+// fetch handler is the only place that sees them. Note the inverse also
+// matters for debugging: if a request never reaches this handler at all
+// (wrong scope, SW not controlling the client, etc.), nothing gets
+// broadcast — that silence is itself the diagnostic signal.
+async function broadcastNet(entry) {
+  try {
+    const clients = await self.clients.matchAll({ includeUncontrolled: true, type: "window" });
+    for (const client of clients) client.postMessage({ __cdvtNet: true, ...entry });
+  } catch {
+    // Diagnostics must never break a real request.
+  }
+}
+
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
   // Intercept requests to our local virtual file system path
   if (url.pathname.startsWith(SANDBOX_PATH)) {
-    event.respondWith(handleGameAssetRequest(url, event.request));
+    const start = Date.now();
+    const navigation = event.request.mode === "navigate";
+    const responsePromise = handleGameAssetRequest(url, event.request)
+      .then((res) => {
+        broadcastNet({
+          method: event.request.method,
+          url: event.request.url,
+          status: res.status,
+          navigation,
+          dur: Date.now() - start,
+        });
+        return res;
+      })
+      .catch((err) => {
+        broadcastNet({
+          method: event.request.method,
+          url: event.request.url,
+          status: "ERR",
+          navigation,
+          dur: Date.now() - start,
+          error: String(err),
+        });
+        throw err;
+      });
+    event.respondWith(responsePromise);
     return;
   }
 });
