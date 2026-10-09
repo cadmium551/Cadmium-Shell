@@ -279,7 +279,9 @@ async function handleGameAssetRequest(url, request) {
             "Content-Length": chunkSize.toString(),
             "Accept-Ranges": "bytes",
             "Access-Control-Allow-Origin": "*",
-            "Cache-Control": "public, max-age=3600"
+            "Cache-Control": "public, max-age=3600",
+            "Cross-Origin-Embedder-Policy": "require-corp",
+            "Cross-Origin-Resource-Policy": "same-origin"
           }
         });
       }
@@ -290,7 +292,9 @@ async function handleGameAssetRequest(url, request) {
         "Content-Type": contentType,
         "Accept-Ranges": "bytes",
         "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "public, max-age=3600"
+        "Cache-Control": "public, max-age=3600",
+            "Cross-Origin-Embedder-Policy": "require-corp",
+            "Cross-Origin-Resource-Policy": "same-origin"
       },
     });
   } catch (error) {
