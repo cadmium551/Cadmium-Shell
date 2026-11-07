@@ -26,7 +26,7 @@ const CSP = [
   "object-src 'none'",
   "frame-src 'self' https: blob: data:",
   "connect-src 'self' https: wss: blob: data:",
-  "script-src 'self' 'wasm-unsafe-eval'",
+  "script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net 'unsafe-inline' 'unsafe-eval'",
   "img-src 'self' https: blob: data:",
   "media-src 'self' https: blob: data:",
   "font-src 'self' blob: data:",
@@ -51,7 +51,6 @@ function* walk(dir) {
 }
 
 const builder = new wbn.BundleBuilder('b2');
-builder.setPrimaryURL(`${origin}/`);
 
 const headersFor = (type) => ({
   'Content-Type': type,

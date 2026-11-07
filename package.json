@@ -38,5 +38,12 @@
     "typescript": "~5.8.2",
     "wbn": "^0.0.9",
     "wbn-sign": "^0.3.1"
+  },
+  "allowScripts": {
+    "wbn@0.0.9": true,
+    "wbn-sign@0.2.0": true,
+    "wbn-sign@0.3.1": true,
+    "esbuild@0.27.7": true,
+    "esbuild@0.25.12": true
   }
 }

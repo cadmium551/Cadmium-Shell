@@ -34,6 +34,15 @@ export default function App() {
   const barTimeoutRef = useRef<number | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [showDevTools, setShowDevTools] = useState(false);
+  const [nativeDevTools, setNativeDevTools] = useState<boolean>(() => {
+    try { return localStorage.getItem('cadmium-native-devtools') === '1'; } catch { return false; }
+  });
+  const nativeDevToolsRef = useRef(nativeDevTools);
+  useEffect(() => {
+    nativeDevToolsRef.current = nativeDevTools;
+    try { localStorage.setItem('cadmium-native-devtools', nativeDevTools ? '1' : '0'); } catch { /* storage unavailable */ }
+    if (nativeDevTools) setShowDevTools(false); // close the in-app panel when switching to native
+  }, [nativeDevTools]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -179,12 +188,13 @@ export default function App() {
 
     // ── DevTools keyboard shortcut: F12 or Ctrl+Shift+I ────────────────────
     const handleDevToolsShortcut = (e: KeyboardEvent) => {
-      if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && e.key === 'I')) {
-        e.preventDefault();
-        setShowDevTools(prev => !prev);
-      }
+      const isShortcut =
+        e.key === 'F12' || (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i'));
+      if (!isShortcut) return;
+      if (nativeDevToolsRef.current) return; // leave it alone so Chrome opens its own DevTools
+      e.preventDefault();
+      setShowDevTools(prev => !prev);
     };
-    window.addEventListener('keydown', handleDevToolsShortcut);
 
     // Track connectivity purely for the "Offline Ready" status pill — the
     // shell and any imported games already run entirely from cache/OPFS
@@ -645,6 +655,33 @@ export default function App() {
               </div>
               
               <div className="p-8">
+
+              <div className="mb-8 p-6 bg-white/5 rounded-2xl border border-white/5">
+                <h3 className="text-cadmium-red font-bold uppercase tracking-widest text-xs mb-2">
+                  DevTools Shortcut
+                </h3>
+                <p className="text-[10px] text-white/70 leading-relaxed mb-4">
+                  Choose what F12 and Ctrl+Shift+I open: the built-in Cadmium panel or Chrome's own DevTools.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setNativeDevTools(false)}
+                    className={`flex-1 px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all ${
+                      !nativeDevTools ? 'bg-cadmium-red text-white' : 'bg-white/5 text-white/40 hover:bg-white/10'
+                    }`}
+                  >
+                    Cadmium panel
+                  </button>
+                  <button
+                    onClick={() => setNativeDevTools(true)}
+                    className={`flex-1 px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all ${
+                      nativeDevTools ? 'bg-cadmium-red text-white' : 'bg-white/5 text-white/40 hover:bg-white/10'
+                    }`}
+                  >
+                    Chrome DevTools
+                  </button>
+                </div>
+              </div>
                 <div className="mb-8 p-6 bg-white/5 rounded-2xl border border-white/5">
                   <h3 className="text-cadmium-red font-bold uppercase tracking-widest text-xs mb-4 flex items-center gap-2">
                     <FileCode size={16} />
